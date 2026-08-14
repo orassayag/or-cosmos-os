@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   SCENARIOS_BY_ID,
@@ -27,6 +27,9 @@ import { OwnershipLegend, groupKey } from './OwnershipLegend';
 import { groupServicesByTeam } from '../scenarios/owners';
 import { TopicPanel } from './TopicPanel';
 import { SubServicePanel } from './SubServicePanel';
+import { DriftOverlay } from './DriftOverlay';
+import { LATEST_DRIFT_BY_NODE, LATEST_DRIFT_DATE, LATEST_DRIFT_ENTRIES } from '../scenarios/drift';
+import type { DriftKind } from '../scenarios/drift';
 import { CometPackets } from './CometPackets';
 import { AmbientPackets } from './AmbientPackets';
 import { UICluster } from './UICluster';
@@ -111,6 +114,14 @@ export function CosmosMap({
   const [selection, setSelection] = useState<Selection>(null);
   const expandedServiceId: string | null = null;
 
+  // ── Drift overlay mode (F5 — "what changed last night") ─────
+  const [driftMode, setDriftMode] = useState(false);
+  const hasDrift = LATEST_DRIFT_DATE != null && LATEST_DRIFT_ENTRIES.length > 0;
+  const driftHighlight = useMemo<Map<string, DriftKind> | null>(
+    () => (driftMode && hasDrift ? LATEST_DRIFT_BY_NODE : null),
+    [driftMode, hasDrift],
+  );
+
   // ── Ownership overlay mode ──────────────────────────────────
   const [ownershipMode, setOwnershipMode] = useState(false);
   const [ownerFilter, setOwnerFilter] = useState<string | null>(null);
@@ -192,30 +203,28 @@ export function CosmosMap({
     return () => window.removeEventListener('keydown', onKey);
   }, [selection, reset]);
 
-  // Spotlight: pan to + select the requested node, then signal consumed.
-  // The frame includes the selected node AND all directly connected neighbours.
-  useEffect(() => {
-    if (!spotlightTarget) return;
-
+  // Pan to + select a single node, framing it together with all its
+  // directly-connected neighbours. Shared by the spotlight (App-driven) and
+  // the drift overlay's click-to-jump.
+  const focusNode = useCallback((id: string, kind: 'service' | 'topic') => {
     // Collect every node ID that connects to this node across all steps.
-    const connectedIds = new Set<string>();
-    connectedIds.add(spotlightTarget.id);
+    const connectedIds = new Set<string>([id]);
     for (const s of STEPS) {
       const ids = [s.from, s.to, s.via, s.through].filter(Boolean) as string[];
-      if (ids.includes(spotlightTarget.id)) ids.forEach(id => connectedIds.add(id));
+      if (ids.includes(id)) ids.forEach(cid => connectedIds.add(cid));
     }
 
     // Expand bbox across all connected nodes.
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const id of connectedIds) {
-      const svc = SERVICES_BY_ID[id];
+    for (const nid of connectedIds) {
+      const svc = SERVICES_BY_ID[nid];
       if (svc) {
         minX = Math.min(minX, svc.x - svc.width / 2);
         minY = Math.min(minY, svc.y - svc.height / 2);
         maxX = Math.max(maxX, svc.x + svc.width / 2);
         maxY = Math.max(maxY, svc.y + svc.height / 2);
       }
-      const topic = TOPICS_BY_ID[id];
+      const topic = TOPICS_BY_ID[nid];
       if (topic) {
         minX = Math.min(minX, topic.x - 20);
         minY = Math.min(minY, topic.y - 20);
@@ -226,13 +235,18 @@ export function CosmosMap({
 
     if (!Number.isFinite(minX)) return;
 
-    if (spotlightTarget.kind === 'service') setSelection({ kind: 'service', id: spotlightTarget.id });
-    else setSelection({ kind: 'topic', id: spotlightTarget.id });
+    setSelection(kind === 'service' ? { kind: 'service', id } : { kind: 'topic', id });
 
     // Left padding reserves room for the service/topic inspector panel (~340px at left:14).
     fitTo({ minX, minY, maxX, maxY }, { top: 100, right: 120, bottom: 100, left: 380 });
+  }, [fitTo]);
+
+  // Spotlight: pan to + select the requested node, then signal consumed.
+  useEffect(() => {
+    if (!spotlightTarget) return;
+    focusNode(spotlightTarget.id, spotlightTarget.kind);
     onSpotlightConsumed?.();
-  }, [spotlightTarget, fitTo, onSpotlightConsumed]);
+  }, [spotlightTarget, focusNode, onSpotlightConsumed]);
 
   useEffect(() => {
     if (!activeScenarioId) {
@@ -403,10 +417,11 @@ export function CosmosMap({
     return ids;
   }, [selection, edges]);
 
-  // Priority: scenario > selection > ownership team filter
+  // Priority: scenario > selection > drift overlay > ownership team filter
   const isNodeDim = (id: string) => {
     if (scenarioActiveSet) return !scenarioActiveSet.has(id);
     if (selectedTouches) return !selectedTouches.has(id);
+    if (driftHighlight) return !driftHighlight.has(id);
     if (teamHighlightSet) return !teamHighlightSet.has(id);
     return false;
   };
@@ -414,6 +429,7 @@ export function CosmosMap({
   const isEdgeDim = (e: EdgeRecord) => {
     if (scenarioActiveSet) return !(scenarioActiveSet.has(e.from) && scenarioActiveSet.has(e.to));
     if (selectedTouches) return !(selectedTouches.has(e.from) && selectedTouches.has(e.to));
+    if (driftHighlight) return !(driftHighlight.has(e.from) && driftHighlight.has(e.to));
     if (teamHighlightSet) return !(teamHighlightSet.has(e.from) && teamHighlightSet.has(e.to));
     return false;
   };
@@ -456,6 +472,7 @@ export function CosmosMap({
       if (e.target && (e.target as HTMLElement).matches('input, textarea, [contenteditable="true"]')) return;
       if (e.key === 'l' || e.key === 'L') setLayoutMode(prev => !prev);
       if (e.key === 'o' || e.key === 'O') toggleOwnershipMode();
+      if ((e.key === 'c' || e.key === 'C') && hasDrift) toggleDriftMode();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -465,9 +482,15 @@ export function CosmosMap({
     const willOpen = !ownershipMode;
     setOwnershipMode(willOpen);
     setOwnerFilter(null);
-    // Ownership legend and the inspector share the top-left slot — opening
-    // one closes the other so they never stack.
-    if (willOpen) setSelection(null);
+    // Ownership legend, drift overlay, and the inspector all share the
+    // top-left slot — opening one closes the others so they never stack.
+    if (willOpen) { setSelection(null); setDriftMode(false); }
+  }
+
+  function toggleDriftMode() {
+    const willOpen = !driftMode;
+    setDriftMode(willOpen);
+    if (willOpen) { setSelection(null); setOwnershipMode(false); setOwnerFilter(null); }
   }
 
   function exitOwnership() {
@@ -633,6 +656,7 @@ export function CosmosMap({
                     service={s}
                     selected={(selection?.kind === 'service' && selection.id === s.id) || currentShotSet.has(s.id)}
                     dimmed={isNodeDim(s.id)}
+                    driftKind={driftHighlight?.get(s.id) ?? null}
                     expanded={expandedServiceId === s.id}
                     selectedSubId={
                       selection?.kind === 'sub-service' && selection.serviceId === s.id ? selection.subId : null
@@ -687,6 +711,7 @@ export function CosmosMap({
                       topic={meta ? { ...t, labelSide: t.labelSide ?? (meta.above ? 'above' : 'below') } : t}
                       selected={(selection?.kind === 'topic' && selection.id === t.id) || currentShotSet.has(t.id)}
                       dimmed={isNodeDim(t.id)}
+                      driftKind={driftHighlight?.get(t.id) ?? null}
                       showLabel={!!meta || topicLabelVisible(t.x, t.y) || (scenarioNodeSet?.has(t.id) ?? false)}
                       onClick={(id) => {
                         if (layoutMode) return;
@@ -743,6 +768,17 @@ export function CosmosMap({
             </>
           ) : (
             <>
+              {hasDrift && (
+                <button
+                  type="button"
+                  className={`lc-layout-btn${driftMode ? ' lc-layout-btn--done' : ''}`}
+                  onClick={toggleDriftMode}
+                  title="Highlight what the last Drift Sync run changed (C)"
+                  aria-pressed={driftMode}
+                >
+                  Changes
+                </button>
+              )}
               <button
                 type="button"
                 className={`lc-layout-btn${ownershipMode ? ' lc-layout-btn--done' : ''}`}
@@ -764,6 +800,14 @@ export function CosmosMap({
             groups={ownerGroups}
             activeKey={ownerFilter}
             onToggle={(key) => setOwnerFilter((prev) => (prev === key ? null : key))}
+          />
+        )}
+
+        {driftMode && !layoutMode && hasDrift && LATEST_DRIFT_DATE && (
+          <DriftOverlay
+            entries={LATEST_DRIFT_ENTRIES}
+            date={LATEST_DRIFT_DATE}
+            onFocus={(nodeId) => focusNode(nodeId, TOPICS_BY_ID[nodeId] ? 'topic' : 'service')}
           />
         )}
 

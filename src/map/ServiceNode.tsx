@@ -1,12 +1,16 @@
 import { AnimatePresence, motion } from 'framer-motion';
 
 import type { Service, SubService } from '../scenarios/types';
+import type { DriftKind } from '../scenarios/drift';
+import { DRIFT_KIND_META } from '../scenarios/drift';
 
 interface ServiceNodeProps {
   service: Service;
   selected?: boolean;
   dimmed?: boolean;
   expanded?: boolean;
+  /** When set, the node was touched by the latest drift run — glows in the kind's color. */
+  driftKind?: DriftKind | null;
   /** When this service's ecosystem is expanded, which sub is currently selected. */
   selectedSubId?: string | null;
   /**
@@ -27,6 +31,7 @@ export function ServiceNode({
   selected = false,
   dimmed = false,
   expanded = false,
+  driftKind = null,
   selectedSubId = null,
   activeSubs = null,
   topicCount = null,
@@ -65,6 +70,23 @@ export function ServiceNode({
               onClick={(e) => { e.stopPropagation(); onClick(n.id); }}
               style={{ cursor: 'pointer' }}
             />
+
+            {driftKind && (
+              <rect
+                x={-w / 2 - 9}
+                y={-h / 2 - 9}
+                width={w + 18}
+                height={h + 18}
+                rx={(h + 18) / 2}
+                fill="none"
+                stroke={DRIFT_KIND_META[driftKind].color}
+                strokeWidth={2.4}
+                pointerEvents="none"
+                style={{ filter: 'url(#cosmos-packet-glow)' }}
+              >
+                <animate attributeName="stroke-opacity" values="0.9;0.35;0.9" dur="1.8s" repeatCount="indefinite" />
+              </rect>
+            )}
 
             {selected && (
               <rect

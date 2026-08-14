@@ -5,6 +5,17 @@
 export { SERVICES, SERVICES_BY_ID } from './services';
 export { TOPICS, TOPICS_BY_ID } from './topics';
 export { DOMAINS, SCENARIOS, SCENARIOS_BY_ID, scenariosForDomain, readyScenariosForDomain } from './scenarios';
+export {
+  DRIFT_ENTRIES,
+  DRIFT_KIND_META,
+  LATEST_DRIFT_DATE,
+  LATEST_DRIFT_ENTRIES,
+  LATEST_DRIFT_BY_NODE,
+  driftEntriesByRun,
+  driftPrUrl,
+  driftCommitUrl,
+} from './drift';
+export type { DriftEntry, DriftKind } from './drift';
 
 import type { Scenario, Step } from './types';
 import { SHOPPING_STEPS } from './steps/shopping';

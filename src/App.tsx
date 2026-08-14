@@ -10,6 +10,7 @@ import { IntroOverlay } from './components/IntroOverlay';
 import { WarpTransition } from './components/WarpTransition';
 import { HelpButton } from './components/HelpButton';
 import { DriftFooter } from './components/DriftFooter';
+import { ChangelogPanel } from './components/ChangelogPanel';
 import { Spotlight } from './components/Spotlight';
 import type { SpotlightTarget } from './components/Spotlight';
 import { BrandStarfield } from './map/BrandStarfield';
@@ -233,6 +234,9 @@ function CosmosShell(p: CosmosShellProps) {
   // Presentation mode: hide the chrome and fatten the comets for talks.
   const [presentation, setPresentation] = useState(false);
 
+  // Architecture changelog slide-over (F6).
+  const [changelogOpen, setChangelogOpen] = useState(false);
+
   // Keyboard: P toggles presentation; arrows / space drive playback so the
   // deck is navigable once the on-screen controls are hidden.
   useEffect(() => {
@@ -301,6 +305,14 @@ function CosmosShell(p: CosmosShellProps) {
             <button
               type="button"
               className="lc-present-btn"
+              onClick={() => setChangelogOpen(true)}
+              title="Architecture changelog — what Drift Sync has caught"
+            >
+              Changelog
+            </button>
+            <button
+              type="button"
+              className="lc-present-btn"
               onClick={() => setPresentation(true)}
               title="Presentation mode — hide chrome for talks (P)"
             >
@@ -355,6 +367,12 @@ function CosmosShell(p: CosmosShellProps) {
       <Spotlight
         onSelectScenario={handlePickScenario}
         onSelectNode={setSpotlightTarget}
+      />
+
+      <ChangelogPanel
+        open={changelogOpen}
+        onClose={() => setChangelogOpen(false)}
+        onSelectNode={(target) => { setSpotlightTarget(target); setChangelogOpen(false); }}
       />
 
       {presentation && (
