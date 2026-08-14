@@ -106,6 +106,9 @@ interface MapProps {
   onSpotlightConsumed?: () => void;
   /** Incremented by the "Cosmos" reset — clears selection and reframes home. */
   resetNonce?: number;
+  /** A random node the Ask panel "focuses" on — dims the map to its cluster
+   *  while the panel is open, so the answer reads as being about it. */
+  askFocusId?: string | null;
 }
 
 
@@ -120,6 +123,7 @@ export function CosmosMap({
   spotlightTarget = null,
   onSpotlightConsumed,
   resetNonce = 0,
+  askFocusId = null,
 }: MapProps) {
   const overlay = useOverlay();
   const [selection, setSelection] = useState<Selection>(null);
@@ -307,11 +311,12 @@ export function CosmosMap({
 
     if (!Number.isFinite(minX)) return;
 
+    overlay.close(OVERLAY.ask);
     setSelection(kind === 'service' ? { kind: 'service', id } : { kind: 'topic', id });
 
     // Left padding reserves room for the service/topic inspector panel (~340px at left:14).
     fitTo({ minX, minY, maxX, maxY }, { top: 100, right: 120, bottom: 100, left: 380 });
-  }, [fitTo]);
+  }, [fitTo, overlay]);
 
   // Spotlight: pan to + select the requested node, then signal consumed.
   useEffect(() => {
@@ -325,8 +330,18 @@ export function CosmosMap({
   useEffect(() => {
     if (resetNonce === 0) return;
     setSelection(null);
+    setTrafficDensity(1);
     reset();
   }, [resetNonce, reset]);
+
+  // The Ask panel and the star inspector both anchor to the left edge — never
+  // let them stack. Opening Ask drops any lingering selection. The reverse
+  // (a node click closing Ask) is done in the click handlers, not an effect on
+  // `selection`, so a selection left over when Ask opens can't race the effect
+  // above and close the panel the same tick it appears.
+  useEffect(() => {
+    if (overlay.isOpen(OVERLAY.ask)) setSelection(null);
+  }, [overlay]);
 
   useEffect(() => {
     if (!activeScenarioId) {
@@ -497,9 +512,24 @@ export function CosmosMap({
     return ids;
   }, [selection, edges]);
 
-  // Priority: scenario > blast radius > selection > drift overlay > ownership.
+  // While the Ask panel is open, dim the map down to a random node and its
+  // immediate neighbours — the "cluster" the answer pretends to be about.
+  const askTouches = useMemo<Set<string> | null>(() => {
+    if (!overlay.isOpen(OVERLAY.ask) || !askFocusId) return null;
+    const ids = new Set<string>([askFocusId]);
+    for (const e of edges) {
+      if (e.from === askFocusId || e.to === askFocusId) {
+        ids.add(e.from);
+        ids.add(e.to);
+      }
+    }
+    return ids;
+  }, [overlay, askFocusId, edges]);
+
+  // Priority: ask focus > scenario > blast radius > selection > drift > ownership.
   // Health is a heat map — it tints every node and never dims.
   const isNodeDim = (id: string) => {
+    if (askTouches) return !askTouches.has(id);
     if (scenarioActiveSet) return !scenarioActiveSet.has(id);
     if (blastReach) return !blastReach.has(id);
     if (selectedTouches) return !selectedTouches.has(id);
@@ -509,6 +539,7 @@ export function CosmosMap({
   };
 
   const isEdgeDim = (e: EdgeRecord) => {
+    if (askTouches) return !(askTouches.has(e.from) && askTouches.has(e.to));
     if (scenarioActiveSet) return !(scenarioActiveSet.has(e.from) && scenarioActiveSet.has(e.to));
     if (blastReach) return !(blastReach.has(e.from) && blastReach.has(e.to));
     if (selectedTouches) return !(selectedTouches.has(e.from) && selectedTouches.has(e.to));
@@ -761,6 +792,7 @@ export function CosmosMap({
                       if (blastMode) { setBlastSourceId((prev) => (prev === id ? null : id)); return; }
                       if (healthMode) { setHealthSelectedId((prev) => (prev === id ? null : id)); return; }
                       exitOwnership();
+                      overlay.close(OVERLAY.ask);
                       setSelection((prev) =>
                         prev?.kind === 'service' && prev.id === id ? null : { kind: 'service', id },
                       );
@@ -768,6 +800,7 @@ export function CosmosMap({
                     onSubServiceClick={(serviceId, subId) => {
                       if (layoutMode) return;
                       exitOwnership();
+                      overlay.close(OVERLAY.ask);
                       setSelection((prev) =>
                         prev?.kind === 'sub-service' && prev.subId === subId
                           ? null
@@ -814,6 +847,7 @@ export function CosmosMap({
                         if (blastMode) { setBlastSourceId((prev) => (prev === id ? null : id)); return; }
                         if (healthMode) return;
                         exitOwnership();
+                        overlay.close(OVERLAY.ask);
                         setSelection((prev) =>
                           prev?.kind === 'topic' && prev.id === id ? null : { kind: 'topic', id },
                         );

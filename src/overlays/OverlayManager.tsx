@@ -58,6 +58,7 @@ export function useOverlay(): OverlayManager {
 /** Stable overlay ids. Adding a new modal? Give it an id here so the manager
  *  (and anyone reasoning about exclusivity) has a single source of truth. */
 export const OVERLAY = {
+  ask: 'ask',
   changelog: 'changelog',
   mapOwnership: 'map-ownership',
   mapChanges: 'map-changes',

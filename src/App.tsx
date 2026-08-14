@@ -10,6 +10,8 @@ import { IntroOverlay } from './components/IntroOverlay';
 import { WarpTransition } from './components/WarpTransition';
 import { HelpButton } from './components/HelpButton';
 import { DriftFooter } from './components/DriftFooter';
+import { AskAgent } from './components/AskAgent';
+import { AskPanel } from './components/AskPanel';
 import { ChangelogPanel } from './components/ChangelogPanel';
 import type { ChangelogActivation, CosmosState } from './components/ChangelogPanel';
 import { Spotlight } from './components/Spotlight';
@@ -17,7 +19,7 @@ import type { SpotlightTarget } from './components/Spotlight';
 import { BrandStarfield } from './map/BrandStarfield';
 import { OverlayProvider, useOverlay, useOverlayManager, OVERLAY } from './overlays/OverlayManager';
 
-import { DOMAINS, SCENARIOS_BY_ID } from './scenarios/data';
+import { DOMAINS, SCENARIOS_BY_ID, SERVICES } from './scenarios/data';
 import type { Step } from './scenarios/types';
 import { useScenarioRunner } from './scenarios/runner';
 import type { Shot } from './scenarios/runner';
@@ -302,6 +304,26 @@ function CosmosShell(p: CosmosShellProps) {
   // through this single-slot manager so none can override another.
   const overlay = useOverlay();
 
+  // The "Ask the agent" demo: the current question drives the answer panel;
+  // the nonce forces a fresh panel (new thinking + typing) on a repeat ask.
+  // The panel is a managed overlay so it can never stack with the star
+  // inspector or any other surface — opening one closes the rest.
+  const [askQuestion, setAskQuestion] = useState<string | null>(null);
+  const [askNonce, setAskNonce] = useState(0);
+  // A random node the map "focuses" on while the answer shows — picked fresh
+  // per question so the demo lands on a different cluster each time. The focus
+  // only engages once the answer starts typing (not during "thinking").
+  const [askFocusId, setAskFocusId] = useState<string | null>(null);
+  const [askAnswering, setAskAnswering] = useState(false);
+  const handleAsk = useCallback((question: string) => {
+    setAskQuestion(question);
+    setAskNonce((n) => n + 1);
+    setAskFocusId(SERVICES[Math.floor(Math.random() * SERVICES.length)].id);
+    setAskAnswering(false);
+    overlay.open(OVERLAY.ask);
+  }, [overlay]);
+  const handleAnswerStart = useCallback(() => setAskAnswering(true), []);
+
   // Keyboard: P toggles presentation; arrows / space drive playback so the
   // deck is navigable once the on-screen controls are hidden.
   useEffect(() => {
@@ -385,6 +407,7 @@ function CosmosShell(p: CosmosShellProps) {
           </div>
 
           <div className="lc-topbar-side lc-topbar-side--right">
+            <AskAgent onAsk={handleAsk} resetNonce={resetNonce} />
             <DriftFooter />
             <button
               type="button"
@@ -419,6 +442,7 @@ function CosmosShell(p: CosmosShellProps) {
           spotlightTarget={spotlightTarget}
           onSpotlightConsumed={() => setSpotlightTarget(null)}
           resetNonce={resetNonce}
+          askFocusId={askAnswering ? askFocusId : null}
         />
 
         <StepPanel
@@ -436,6 +460,15 @@ function CosmosShell(p: CosmosShellProps) {
           visible={!!scenario && history.length > 0}
           onClear={() => setHistory([])}
         />
+
+        {overlay.isOpen(OVERLAY.ask) && askQuestion !== null && (
+          <AskPanel
+            key={askNonce}
+            question={askQuestion}
+            onClose={() => overlay.close(OVERLAY.ask)}
+            onAnswerStart={handleAnswerStart}
+          />
+        )}
 
         <PlaybackControls
           runner={runner}
