@@ -10,6 +10,8 @@ interface TopicNodeProps {
   showLabel?: boolean;
   /** When set, the topic was touched by the latest drift run — glows in the kind's color. */
   driftKind?: DriftKind | null;
+  /** Generic halo color for the blast-radius overlay (a hex, or null). */
+  accentRing?: string | null;
   onClick: (id: string) => void;
 }
 
@@ -17,7 +19,7 @@ interface TopicNodeProps {
  * Topic node — small dashed orbital ring with a tiny core.
  * Slowly rotates always (kept lightweight). Visual values lifted
  */
-export function TopicNode({ topic: t, selected = false, dimmed = false, showLabel = false, driftKind = null, onClick }: TopicNodeProps) {
+export function TopicNode({ topic: t, selected = false, dimmed = false, showLabel = false, driftKind = null, accentRing = null, onClick }: TopicNodeProps) {
   // Topics below the main spine pile labels downward — flip above so they stay readable.
   const labelAbove =
     t.labelSide === 'above' ? true
@@ -54,6 +56,19 @@ export function TopicNode({ topic: t, selected = false, dimmed = false, showLabe
           style={{ filter: 'url(#cosmos-packet-glow)' }}
         >
           <animate attributeName="stroke-opacity" values="0.9;0.3;0.9" dur="1.8s" repeatCount="indefinite" />
+        </circle>
+      )}
+
+      {accentRing && (
+        <circle
+          r={17}
+          fill="none"
+          stroke={accentRing}
+          strokeWidth={2}
+          pointerEvents="none"
+          style={{ filter: 'url(#cosmos-packet-glow)' }}
+        >
+          <animate attributeName="stroke-opacity" values="0.95;0.35;0.95" dur="2s" repeatCount="indefinite" />
         </circle>
       )}
 

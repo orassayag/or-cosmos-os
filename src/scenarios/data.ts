@@ -14,6 +14,9 @@ export {
   driftEntriesByRun,
   driftPrUrl,
   driftCommitUrl,
+  driftBranch,
+  driftPrName,
+  driftEntryMatches,
 } from './drift';
 export type { DriftEntry, DriftKind } from './drift';
 

@@ -11,6 +11,8 @@ interface ServiceNodeProps {
   expanded?: boolean;
   /** When set, the node was touched by the latest drift run — glows in the kind's color. */
   driftKind?: DriftKind | null;
+  /** Generic halo color for the blast-radius / health overlays (a hex, or null). */
+  accentRing?: string | null;
   /** When this service's ecosystem is expanded, which sub is currently selected. */
   selectedSubId?: string | null;
   /**
@@ -32,6 +34,7 @@ export function ServiceNode({
   dimmed = false,
   expanded = false,
   driftKind = null,
+  accentRing = null,
   selectedSubId = null,
   activeSubs = null,
   topicCount = null,
@@ -85,6 +88,23 @@ export function ServiceNode({
                 style={{ filter: 'url(#cosmos-packet-glow)' }}
               >
                 <animate attributeName="stroke-opacity" values="0.9;0.35;0.9" dur="1.8s" repeatCount="indefinite" />
+              </rect>
+            )}
+
+            {accentRing && (
+              <rect
+                x={-w / 2 - 9}
+                y={-h / 2 - 9}
+                width={w + 18}
+                height={h + 18}
+                rx={(h + 18) / 2}
+                fill="none"
+                stroke={accentRing}
+                strokeWidth={2.4}
+                pointerEvents="none"
+                style={{ filter: 'url(#cosmos-packet-glow)' }}
+              >
+                <animate attributeName="stroke-opacity" values="0.95;0.4;0.95" dur="2s" repeatCount="indefinite" />
               </rect>
             )}
 

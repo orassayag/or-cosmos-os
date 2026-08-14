@@ -8,7 +8,7 @@
   position: fixed;
   inset: 0;
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto 1fr auto;
   background: #04060A;
   overflow: hidden;
 }
@@ -35,6 +35,7 @@
    stage so dropdowns and the dot-strip render on top of the map. */
 .lc-app > .lc-stage  { position: relative; z-index: 1; }
 .lc-app > .lc-topbar { position: relative; z-index: 20; }
+.lc-app > .lc-footer { position: relative; z-index: 20; }
 
 /* ── Reveal — when CTA fires the map ignites slowly ──────── */
 .lc-app[data-revealing='true'] .lc-stage {
@@ -163,10 +164,9 @@ body:has(.lc-map-stage[data-panning='true']) * {
   -webkit-user-select: none !important;
 }
 
-/* Zoom controls (bottom-right of map) */
-.lc-map-zoom {
+/* Stepper panels (bottom-right of map) — shared by zoom and traffic. */
+.lc-map-stepper {
   position: absolute;
-  right: 14px;
   bottom: 14px;
   display: inline-flex;
   flex-direction: column;
@@ -177,6 +177,12 @@ body:has(.lc-map-stage[data-panning='true']) * {
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   z-index: 10;
+}
+.lc-map-stepper--zoom { right: 14px; }
+.lc-map-stepper--traffic { right: 56px; }
+.lc-map-stepper .lc-map-zoom-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 .lc-map-zoom-btn {
   display: inline-flex;
@@ -411,6 +417,317 @@ body:has(.lc-map-stage[data-panning='true']) * {
   border-color: var(--border-strong);
 }
 
+/* ── Blast-radius overlay legend (F14) ─────────────────────── */
+.lc-blast-legend {
+  position: absolute;
+  left: 14px;
+  top: 64px;
+  width: 250px;
+  padding: 12px 12px 8px;
+  background: color-mix(in srgb, var(--surface-1) 88%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 18px 44px -22px rgba(0, 0, 0, 0.8);
+  z-index: 11;
+  animation: lc-menu-in 200ms cubic-bezier(0.2, 0.9, 0.3, 1.1);
+}
+.lc-blast-legend-title {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.lc-blast-legend-hint {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  line-height: 1.5;
+  color: var(--text-3);
+  opacity: 0.8;
+}
+.lc-blast-legend-source {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-2);
+}
+.lc-blast-legend-source-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-1);
+}
+.lc-blast-legend-clear {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-std), border-color var(--dur-fast) var(--ease-std);
+}
+.lc-blast-legend-clear:hover { color: var(--text-1); border-color: var(--border-strong); }
+.lc-blast-legend-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.lc-blast-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std);
+}
+.lc-blast-legend-item:hover { background: var(--bg-surface-2); color: var(--text-1); }
+.lc-blast-legend-swatch {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 8px -1px currentColor;
+}
+.lc-blast-legend-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-blast-legend-level {
+  flex-shrink: 0;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* ── Health heat-map overlay (F17) ─────────────────────────── */
+.lc-health-legend {
+  position: absolute;
+  left: 14px;
+  top: 64px;
+  width: 220px;
+  padding: 12px 12px 10px;
+  background: color-mix(in srgb, var(--surface-1) 88%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 18px 44px -22px rgba(0, 0, 0, 0.8);
+  z-index: 11;
+  animation: lc-menu-in 200ms cubic-bezier(0.2, 0.9, 0.3, 1.1);
+}
+.lc-health-legend-title {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.lc-health-legend-hint {
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-3);
+  opacity: 0.75;
+}
+.lc-health-legend-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lc-health-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+.lc-health-legend-swatch {
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 9px -1px currentColor;
+}
+.lc-health-legend-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  color: var(--text-1);
+}
+.lc-health-legend-blurb {
+  font-size: 9px;
+  color: var(--text-3);
+  opacity: 0.85;
+}
+.lc-health-legend-count {
+  font-size: 10px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.lc-health-legend-foot {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  opacity: 0.7;
+}
+
+/* On-call card — opens on the right when a star is clicked. */
+.lc-health-card {
+  position: absolute;
+  right: 14px;
+  top: 64px;
+  width: 258px;
+  padding: 14px 14px 12px;
+  background: color-mix(in srgb, var(--surface-1) 90%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 18px 44px -22px rgba(0, 0, 0, 0.8);
+  z-index: 12;
+  animation: lc-menu-in 200ms cubic-bezier(0.2, 0.9, 0.3, 1.1);
+}
+.lc-health-card-close {
+  position: absolute;
+  top: 8px; right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px; height: 22px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--text-3);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-std), background var(--dur-fast) var(--ease-std);
+}
+.lc-health-card-close:hover { color: var(--text-1); background: var(--bg-surface-2); }
+.lc-health-card-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-right: 24px;
+}
+.lc-health-card-swatch {
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 10px -1px currentColor;
+}
+.lc-health-card-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-1);
+}
+.lc-health-card-badge {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.lc-health-card-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin: 12px 0 0;
+}
+.lc-health-card-stats div { display: flex; flex-direction: column; gap: 2px; }
+.lc-health-card-stats dt {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.lc-health-card-stats dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-1);
+}
+.lc-health-card-oncall {
+  margin-top: 13px;
+  padding-top: 11px;
+  border-top: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.lc-health-card-oncall--none { color: var(--text-3); }
+.lc-health-card-oncall-handle { color: var(--text-1); font-weight: 500; }
+.lc-health-card-oncall-until { color: var(--svc-cyan); }
+.lc-health-card-slack {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 9px;
+  padding: 5px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-decoration: none;
+  transition: color var(--dur-fast) var(--ease-std), border-color var(--dur-fast) var(--ease-std), background var(--dur-fast) var(--ease-std);
+}
+.lc-health-card-slack:hover {
+  color: var(--text-1);
+  border-color: var(--svc-cyan);
+  background: color-mix(in srgb, var(--svc-cyan) 10%, transparent);
+}
+
 /* ── Drift Sync status pill (topbar-right) ─────────────────── */
 .lc-drift-footer {
   display: inline-flex;
@@ -496,6 +813,49 @@ body:has(.lc-map-stage[data-panning='true']) * {
   background: var(--bg-surface-2);
   font-size: 9px;
   color: var(--text-2);
+}
+
+/* ── Bottom footer — keyboard-shortcut strip ───────────────── */
+.lc-footer {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 6px 18px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-1) 90%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+}
+.lc-footer kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg-surface-2);
+  font-size: 9px;
+  color: var(--text-2);
+}
+.lc-footer-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  letter-spacing: inherit;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-std);
+}
+.lc-footer-reset:hover { color: var(--text-1); }
+.lc-footer-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /* ── Architecture changelog slide-over (F6) ────────────────── */
@@ -593,6 +953,23 @@ body:has(.lc-map-stage[data-panning='true']) * {
   border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
 }
 .lc-changelog-item:last-child { border-bottom: none; }
+/* A clickable item warps the map to the change it describes. */
+.lc-changelog-item--clickable {
+  cursor: pointer;
+  margin: 0 -10px;
+  padding-left: 10px;
+  padding-right: 10px;
+  border-radius: var(--radius-md);
+  transition: background var(--dur-fast) var(--ease-std);
+}
+.lc-changelog-item--clickable:hover,
+.lc-changelog-item--clickable:focus-visible {
+  background: color-mix(in srgb, var(--text-1) 7%, transparent);
+  outline: none;
+}
+.lc-changelog-item--clickable:focus-visible {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-2) 40%, transparent);
+}
 .lc-changelog-glyph { font-size: 12px; line-height: 1.4; flex-shrink: 0; }
 .lc-changelog-item-body { min-width: 0; }
 .lc-changelog-item-title {
@@ -637,6 +1014,106 @@ body:has(.lc-map-stage[data-panning='true']) * {
 }
 .lc-changelog-node:hover,
 .lc-changelog-link:hover { color: var(--text-1); border-color: var(--border-strong); }
+.lc-changelog-owner {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-3);
+}
+
+/* Tag row — searchable subsystem / risk-area labels. */
+.lc-changelog-tags {
+  margin-top: 7px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.lc-changelog-tag {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-3);
+  background: color-mix(in srgb, var(--text-1) 6%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+}
+
+/* Search bar under the changelog title. */
+.lc-changelog-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 16px 20px 0;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  transition: border-color var(--dur-fast) var(--ease-std);
+}
+.lc-changelog-search:focus-within { border-color: var(--border-strong); }
+.lc-changelog-search-icon { color: var(--text-3); flex-shrink: 0; }
+.lc-changelog-search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  padding: 8px 8px;
+}
+.lc-changelog-search-input::placeholder { color: var(--text-3); }
+.lc-changelog-search-input::-webkit-search-cancel-button { display: none; }
+.lc-changelog-search-clear {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.lc-changelog-search-clear:hover { color: var(--text-1); }
+
+.lc-changelog-empty {
+  padding: 24px 4px;
+  text-align: center;
+  color: var(--text-3);
+  font-size: var(--text-sm);
+}
+
+/* Load-more button + its inline spinner. */
+.lc-changelog-loadmore {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 16px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-std), border-color var(--dur-fast) var(--ease-std), background var(--dur-fast) var(--ease-std);
+}
+.lc-changelog-loadmore:hover:not(:disabled) { color: var(--text-1); border-color: var(--border-strong); background: var(--bg-surface-2); }
+.lc-changelog-loadmore:disabled { cursor: default; opacity: 0.75; }
+.lc-changelog-spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.6px solid color-mix(in srgb, var(--text-2) 30%, transparent);
+  border-top-color: var(--text-1);
+  animation: lc-spin 0.6s linear infinite;
+}
+@keyframes lc-spin { to { transform: rotate(360deg); } }
 
 /* ── Copy-share-link button (playback controls) ────────────── */
 .lc-pb-share {
@@ -667,10 +1144,14 @@ body:has(.lc-map-stage[data-panning='true']) * {
 /* ── Presentation mode — hide chrome, keep map + step story ── */
 .lc-app[data-presentation='true'] .lc-topbar,
 .lc-app[data-presentation='true'] .lc-controls,
-.lc-app[data-presentation='true'] .lc-map-zoom,
+.lc-app[data-presentation='true'] .lc-map-stepper,
+.lc-app[data-presentation='true'] .lc-footer,
 .lc-app[data-presentation='true'] .lc-layout-controls,
 .lc-app[data-presentation='true'] .lc-owner-legend,
 .lc-app[data-presentation='true'] .lc-drift-overlay,
+.lc-app[data-presentation='true'] .lc-blast-legend,
+.lc-app[data-presentation='true'] .lc-health-legend,
+.lc-app[data-presentation='true'] .lc-health-card,
 .lc-app[data-presentation='true'] .lc-activity {
   opacity: 0;
   pointer-events: none;
@@ -1383,9 +1864,10 @@ body:has(.lc-map-stage[data-panning='true']) * {
 .lc-activity {
   position: absolute;
   left: 14px;
-  bottom: 14px;
-  width: 320px;
-  max-height: 280px;
+  bottom: 52px;
+  /* Matches the step / description panel width (.lc-step-panel). */
+  width: 360px;
+  max-height: 220px;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border);
@@ -2063,6 +2545,51 @@ body:has(.lc-map-stage[data-panning='true']) * {
   text-shadow: 0 0 18px color-mix(in srgb, white 10%, transparent);
 }
 
+/* The wordmark doubles as a "reset the galaxy" control. */
+.lc-topbar-brand--reset {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  margin: -2px -8px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-std), opacity var(--dur-fast) var(--ease-std);
+}
+.lc-topbar-brand--reset:hover {
+  background: color-mix(in srgb, var(--text-1) 8%, transparent);
+}
+.lc-topbar-brand--reset:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--text-2) 45%, transparent);
+}
+
+/* Commit/branch the map is framed on, shown after warping to a changelog item. */
+.lc-cosmos-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 10px;
+  padding: 3px 9px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-2);
+  white-space: nowrap;
+  animation: lc-cosmos-state-in 260ms var(--ease-std) both;
+}
+@keyframes lc-cosmos-state-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.lc-cosmos-state-icon { color: color-mix(in srgb, var(--accent) 90%, var(--text-1)); flex-shrink: 0; }
+.lc-cosmos-state-branch { color: var(--text-1); font-weight: 500; }
+.lc-cosmos-state-sep { color: var(--text-3); }
+.lc-cosmos-state-sha { color: var(--text-2); }
+
 /* Domain tabs — rounder, glowing active. */
 .lc-domain-tabs {
   border-radius: var(--radius-xl);
@@ -2173,8 +2700,8 @@ body:has(.lc-map-stage[data-panning='true']) * {
     0 0 10px 1px color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
-/* Map zoom controls — rounder, accented hover. */
-.lc-map-zoom {
+/* Map stepper controls — rounder, accented hover. */
+.lc-map-stepper {
   border-radius: var(--radius-xl);
   background: color-mix(in srgb, var(--surface-1) 80%, transparent);
 }
@@ -2239,6 +2766,19 @@ body:has(.lc-map-stage[data-panning='true']) * {
     0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent),
     0 0 40px -12px color-mix(in srgb, var(--accent) 22%, transparent);
   padding-left: 28px;
+}
+/* When a left-side legend is open (drift / ownership), the inspector moves to
+   the right so the two don't stack — mirrors the health-mode arrangement. */
+.lc-map-panel--right {
+  left: auto !important;
+  right: 14px !important;
+}
+/* When the live-activity box shares the left column, cap the inspector so the two
+   stack (panel → activity → footer) instead of overlapping. Reserves the activity
+   box's bottom offset (52px) + max-height (220px) + a 12px gap + the panel's own
+   14px top inset = 298px. Only left-side panels compete with it. */
+.lc-stage:has(.lc-activity) .lc-map-panel:not(.lc-map-panel--right) {
+  max-height: calc(100% - 298px) !important;
 }
 /* Vertical accent spine — the visual marker that this is an inspector. */
 .lc-map-panel-spine {

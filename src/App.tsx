@@ -11,9 +11,11 @@ import { WarpTransition } from './components/WarpTransition';
 import { HelpButton } from './components/HelpButton';
 import { DriftFooter } from './components/DriftFooter';
 import { ChangelogPanel } from './components/ChangelogPanel';
+import type { ChangelogActivation, CosmosState } from './components/ChangelogPanel';
 import { Spotlight } from './components/Spotlight';
 import type { SpotlightTarget } from './components/Spotlight';
 import { BrandStarfield } from './map/BrandStarfield';
+import { OverlayProvider, useOverlay, useOverlayManager, OVERLAY } from './overlays/OverlayManager';
 
 import { DOMAINS, SCENARIOS_BY_ID } from './scenarios/data';
 import type { Step } from './scenarios/types';
@@ -62,6 +64,17 @@ export function App() {
   // The step explainer panel can be dismissed by the user; it auto-reopens
   // whenever the user navigates (next/prev/dot/play) or picks a new scenario.
   const [panelOpen, setPanelOpen] = useState(true);
+
+  // Single-slot manager so no modal/overlay ever overrides another.
+  const overlay = useOverlayManager();
+  // A changelog item warps to its affected node: play the hyperspace effect,
+  // then land the map on the node once the warp finishes.
+  const [warp, setWarp] = useState<ChangelogActivation | null>(null);
+  // The commit/branch the map is currently framed on (set after a warp), shown
+  // beside the title so you always know which state you're looking at.
+  const [cosmosState, setCosmosState] = useState<CosmosState | null>(null);
+  // Bumped by the "Cosmos" title to force the map back to its initial state.
+  const [resetNonce, setResetNonce] = useState(0);
 
   useEffect(() => {
     return onShot((s) => {
@@ -126,20 +139,54 @@ export function App() {
     [],
   );
 
-  // ESC clears the active scenario and de-isolates the map.
+  // A whole changelog item was clicked: close the changelog and kick off the
+  // hyperspace warp toward the item's affected node.
+  const handleActivateChangelogItem = useCallback(
+    (activation: ChangelogActivation) => {
+      overlay.close(OVERLAY.changelog);
+      setWarp(activation);
+    },
+    [overlay],
+  );
+
+  // Warp finished — land the map on the node the item pointed at and record
+  // the commit/branch it represents so the title can show where we are.
+  const handleWarpDone = useCallback(() => {
+    if (warp) {
+      setSpotlightTarget(warp.target);
+      setCosmosState(warp.state);
+    }
+    setWarp(null);
+  }, [warp]);
+
+  // The "Cosmos" title resets the galaxy to its initial state: no scenario,
+  // home domain, cleared history/URL params, every overlay closed, map reframed.
+  const handleResetGalaxy = useCallback(() => {
+    setScenario(null);
+    setHistory([]);
+    setShot(null);
+    setPanelOpen(true);
+    setActiveDomain(DOMAINS[0].id);
+    setSpotlightTarget(null);
+    setWarp(null);
+    setCosmosState(null);
+    overlay.reset();
+    setResetNonce((n) => n + 1);
+  }, [setScenario, overlay]);
+
+  // ESC resets the whole galaxy — clears the scenario, filters, selection,
+  // overlays and URL, and reframes the map to home. Skipped while a modal
+  // (help / changelog / spotlight) is open, since each closes on its own Esc.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (e.target && (e.target as HTMLElement).matches('input, textarea, [contenteditable="true"]')) return;
-      if (!state.scenarioId) return;
-      setScenario(null);
-      setHistory([]);
-      setShot(null);
-      setPanelOpen(true);
+      if (document.querySelector('.lc-help-overlay, .lc-changelog-backdrop, .lc-spotlight-backdrop')) return;
+      handleResetGalaxy();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [state.scenarioId, setScenario]);
+  }, [handleResetGalaxy]);
 
   // Any active scenario isolates the map — the moment a scenario is
   // picked, fade everything outside its touch set so the active flow
@@ -167,29 +214,39 @@ export function App() {
     );
   }
 
-  return <CosmosShell
-    activeDomain={activeDomain}
-    runner={runner}
-    state={state}
-    steps={steps}
-    scenario={scenario}
-    shot={shot}
-    history={history}
-    panelOpen={panelOpen}
-    setPanelOpen={setPanelOpen}
-    handlePickDomain={handlePickDomain}
-    handlePickScenario={handlePickScenario}
-    handleShotComplete={handleShotComplete}
-    isolate={isolate}
-    setHistory={setHistory}
-    navPlay={navPlay}
-    navPrev={navPrev}
-    navNext={navNext}
-    navJump={navJump}
-    navRestart={navRestart}
-    spotlightTarget={spotlightTarget}
-    setSpotlightTarget={setSpotlightTarget}
-  />;
+  return (
+    <OverlayProvider value={overlay}>
+      <CosmosShell
+        activeDomain={activeDomain}
+        runner={runner}
+        state={state}
+        steps={steps}
+        scenario={scenario}
+        shot={shot}
+        history={history}
+        panelOpen={panelOpen}
+        setPanelOpen={setPanelOpen}
+        handlePickDomain={handlePickDomain}
+        handlePickScenario={handlePickScenario}
+        handleShotComplete={handleShotComplete}
+        isolate={isolate}
+        setHistory={setHistory}
+        navPlay={navPlay}
+        navPrev={navPrev}
+        navNext={navNext}
+        navJump={navJump}
+        navRestart={navRestart}
+        spotlightTarget={spotlightTarget}
+        setSpotlightTarget={setSpotlightTarget}
+        warping={!!warp}
+        onWarpDone={handleWarpDone}
+        onActivateChangelogItem={handleActivateChangelogItem}
+        onResetGalaxy={handleResetGalaxy}
+        cosmosState={cosmosState}
+        resetNonce={resetNonce}
+      />
+    </OverlayProvider>
+  );
 }
 
 interface CosmosShellProps {
@@ -214,6 +271,12 @@ interface CosmosShellProps {
   navRestart: () => void;
   spotlightTarget: SpotlightTarget | null;
   setSpotlightTarget: (t: SpotlightTarget | null) => void;
+  warping: boolean;
+  onWarpDone: () => void;
+  onActivateChangelogItem: (activation: ChangelogActivation) => void;
+  onResetGalaxy: () => void;
+  cosmosState: CosmosState | null;
+  resetNonce: number;
 }
 
 function CosmosShell(p: CosmosShellProps) {
@@ -229,13 +292,15 @@ function CosmosShell(p: CosmosShellProps) {
     panelOpen, setPanelOpen, handlePickDomain, handlePickScenario,
     handleShotComplete, isolate, setHistory, navPlay, navPrev, navNext, navJump, navRestart,
     spotlightTarget, setSpotlightTarget,
+    warping, onWarpDone, onActivateChangelogItem, onResetGalaxy, cosmosState, resetNonce,
   } = p;
 
   // Presentation mode: hide the chrome and fatten the comets for talks.
   const [presentation, setPresentation] = useState(false);
 
-  // Architecture changelog slide-over (F6).
-  const [changelogOpen, setChangelogOpen] = useState(false);
+  // Every mutually-exclusive surface (changelog + the map overlays) flows
+  // through this single-slot manager so none can override another.
+  const overlay = useOverlay();
 
   // Keyboard: P toggles presentation; arrows / space drive playback so the
   // deck is navigable once the on-screen controls are hidden.
@@ -273,7 +338,12 @@ function CosmosShell(p: CosmosShellProps) {
       <header className="lc-topbar">
         <div className="lc-topbar-row">
           <div className="lc-topbar-side lc-topbar-side--left">
-            <span className="lc-topbar-brand">
+            <button
+              type="button"
+              className="lc-topbar-brand lc-topbar-brand--reset"
+              onClick={onResetGalaxy}
+              title="Reset the galaxy — clear the current scenario, filters and URL"
+            >
               Cosmos
               <span
                 style={{
@@ -287,7 +357,21 @@ function CosmosShell(p: CosmosShellProps) {
               >
                 {BRAND.badge}
               </span>
-            </span>
+            </button>
+            {cosmosState && (
+              <span
+                className="lc-cosmos-state"
+                title={`Viewing ${cosmosState.title} — ${cosmosState.repo}@${cosmosState.sha} on ${cosmosState.branch}`}
+              >
+                <svg className="lc-cosmos-state-icon" width={12} height={12} viewBox="0 0 12 12" aria-hidden="true">
+                  <path d="M3 1.5 v9 M3 4 a2.5 2.5 0 0 0 2.5 2.5 h1.5 M9 1.5 a1.5 1.5 0 1 1 0 3 a1.5 1.5 0 0 1 0 -3 Z M3 1.5 a1.5 1.5 0 1 1 0 0.01 Z M3 10.5 a1.5 1.5 0 1 1 0 0.01 Z"
+                    fill="none" stroke="currentColor" strokeWidth={1} strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <span className="lc-cosmos-state-branch">{cosmosState.branch}</span>
+                <span className="lc-cosmos-state-sep">·</span>
+                <span className="lc-cosmos-state-sha">{cosmosState.repo}@{cosmosState.sha}</span>
+              </span>
+            )}
             <DomainBar
               active={activeDomain}
               activeScenarioId={state.scenarioId}
@@ -305,7 +389,7 @@ function CosmosShell(p: CosmosShellProps) {
             <button
               type="button"
               className="lc-present-btn"
-              onClick={() => setChangelogOpen(true)}
+              onClick={() => overlay.open(OVERLAY.changelog)}
               title="Architecture changelog — what Drift Sync has caught"
             >
               Changelog
@@ -334,6 +418,7 @@ function CosmosShell(p: CosmosShellProps) {
           presentation={presentation}
           spotlightTarget={spotlightTarget}
           onSpotlightConsumed={() => setSpotlightTarget(null)}
+          resetNonce={resetNonce}
         />
 
         <StepPanel
@@ -364,16 +449,36 @@ function CosmosShell(p: CosmosShellProps) {
 
       </div>
 
+      <footer className="lc-footer">
+        <button
+          type="button"
+          className="lc-footer-reset"
+          onClick={onResetGalaxy}
+          title="Reset the galaxy — clear the current scenario, filters and URL"
+        >
+          <kbd>Esc</kbd>
+          <span>Reset</span>
+        </button>
+        <span className="lc-footer-hint"><kbd>P</kbd> Present</span>
+        <span className="lc-footer-hint"><kbd>←</kbd> <kbd>→</kbd> Steps</span>
+        <span className="lc-footer-hint"><kbd>Space</kbd> Play / Pause</span>
+      </footer>
+
       <Spotlight
         onSelectScenario={handlePickScenario}
         onSelectNode={setSpotlightTarget}
       />
 
       <ChangelogPanel
-        open={changelogOpen}
-        onClose={() => setChangelogOpen(false)}
-        onSelectNode={(target) => { setSpotlightTarget(target); setChangelogOpen(false); }}
+        open={overlay.isOpen(OVERLAY.changelog)}
+        onClose={() => overlay.close(OVERLAY.changelog)}
+        onSelectNode={(target) => { setSpotlightTarget(target); overlay.close(OVERLAY.changelog); }}
+        onActivateItem={onActivateChangelogItem}
       />
+
+      {/* Hyperspace warp played when a changelog item is clicked — lands on
+          the item's node once it finishes. */}
+      {warping && <WarpTransition duration={1600} onDone={onWarpDone} />}
 
       {presentation && (
         <button

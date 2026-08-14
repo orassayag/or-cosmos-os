@@ -30,13 +30,20 @@ import { SubServicePanel } from './SubServicePanel';
 import { DriftOverlay } from './DriftOverlay';
 import { LATEST_DRIFT_BY_NODE, LATEST_DRIFT_DATE, LATEST_DRIFT_ENTRIES } from '../scenarios/drift';
 import type { DriftKind } from '../scenarios/drift';
+import { BlastLegend } from './BlastLegend';
+import { computeBlastRadius, BLAST_LEVEL_META } from './blast-radius';
+import { HealthLegend } from './HealthLegend';
+import { HealthCard } from './HealthCard';
+import { HEALTH_BY_SERVICE, HEALTH_STATUS_META } from '../scenarios/health';
 import { CometPackets } from './CometPackets';
 import { AmbientPackets } from './AmbientPackets';
+import { MapStepper } from './MapStepper';
 import { UICluster } from './UICluster';
 import { ShoppingCluster } from './ShoppingCluster';
 import { FulfillmentCluster } from './FulfillmentCluster';
 import { EngagementCluster } from './EngagementCluster';
 import { EdgeRegistryContext, createEdgeRegistry } from './edge-registry';
+import { useOverlay, OVERLAY } from '../overlays/OverlayManager';
 
 const WORLD_MIN_Y = -200;
 const WORLD_W = 4000;
@@ -97,6 +104,8 @@ interface MapProps {
   /** Set by the spotlight to pan+select a node; cleared after consumption. */
   spotlightTarget?: { id: string; kind: 'service' | 'topic' } | null;
   onSpotlightConsumed?: () => void;
+  /** Incremented by the "Cosmos" reset — clears selection and reframes home. */
+  resetNonce?: number;
 }
 
 
@@ -110,12 +119,34 @@ export function CosmosMap({
   presentation = false,
   spotlightTarget = null,
   onSpotlightConsumed,
+  resetNonce = 0,
 }: MapProps) {
+  const overlay = useOverlay();
   const [selection, setSelection] = useState<Selection>(null);
   const expandedServiceId: string | null = null;
 
+  // Ambient-traffic density multiplier — driven by the +/- panel. 1 = default;
+  // higher spawns more concurrent packets, same flight speed.
+  const [trafficDensity, setTrafficDensity] = useState(1);
+  const TRAFFIC_MIN = 0.25;
+  const TRAFFIC_MAX = 4;
+  const bumpTrafficDensity = useCallback((factor: number) => {
+    setTrafficDensity((density) => {
+      const next = Math.max(TRAFFIC_MIN, Math.min(TRAFFIC_MAX, density * factor));
+      return Math.round(next * 100) / 100;
+    });
+  }, []);
+
+  // Drift, ownership and layout are mutually-exclusive surfaces owned by the
+  // shared overlay manager, so opening one (or the changelog, from the top bar)
+  // closes the others — a single source of truth, no stacking.
+  const driftMode = overlay.isOpen(OVERLAY.mapChanges);
+  const ownershipMode = overlay.isOpen(OVERLAY.mapOwnership);
+  const blastMode = overlay.isOpen(OVERLAY.mapBlast);
+  const healthMode = overlay.isOpen(OVERLAY.mapHealth);
+  const layoutMode = overlay.isOpen(OVERLAY.mapLayout);
+
   // ── Drift overlay mode (F5 — "what changed last night") ─────
-  const [driftMode, setDriftMode] = useState(false);
   const hasDrift = LATEST_DRIFT_DATE != null && LATEST_DRIFT_ENTRIES.length > 0;
   const driftHighlight = useMemo<Map<string, DriftKind> | null>(
     () => (driftMode && hasDrift ? LATEST_DRIFT_BY_NODE : null),
@@ -123,7 +154,6 @@ export function CosmosMap({
   );
 
   // ── Ownership overlay mode ──────────────────────────────────
-  const [ownershipMode, setOwnershipMode] = useState(false);
   const [ownerFilter, setOwnerFilter] = useState<string | null>(null);
   const ownerGroups = useMemo(() => groupServicesByTeam(SERVICES), []);
   const teamHighlightSet = useMemo<Set<string> | null>(() => {
@@ -132,8 +162,48 @@ export function CosmosMap({
     return group ? new Set(group.serviceIds) : null;
   }, [ownershipMode, ownerFilter, ownerGroups]);
 
+  // Ownership's team filter is meaningless once the overlay is closed (by any
+  // route, including another surface opening) — drop it so it never lingers.
+  useEffect(() => {
+    if (!ownershipMode) setOwnerFilter(null);
+  }, [ownershipMode]);
+
+  // ── Blast-radius overlay mode (F14 — "what breaks if I change X") ──
+  const [blastSourceId, setBlastSourceId] = useState<string | null>(null);
+  const blastResult = useMemo(
+    () => (blastMode && blastSourceId ? computeBlastRadius(blastSourceId) : null),
+    [blastMode, blastSourceId],
+  );
+  // With a source picked, dim every node outside its blast radius.
+  const blastReach = useMemo<Set<string> | null>(
+    () => (blastResult ? new Set(blastResult.levels.keys()) : null),
+    [blastResult],
+  );
+  useEffect(() => {
+    if (!blastMode) setBlastSourceId(null);
+  }, [blastMode]);
+
+  // ── Health heat-map overlay mode (F17) ─────────────────────
+  const [healthSelectedId, setHealthSelectedId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!healthMode) setHealthSelectedId(null);
+  }, [healthMode]);
+
+  // Per-node overlay halo color: blast-severity while a source is picked,
+  // health tint while the heat map is on. Null in every other mode.
+  const accentRingFor = (id: string): string | null => {
+    if (blastResult) {
+      const level = blastResult.levels.get(id);
+      return level ? BLAST_LEVEL_META[level].hex : null;
+    }
+    if (healthMode) {
+      const health = HEALTH_BY_SERVICE.get(id);
+      return health ? HEALTH_STATUS_META[health.status].hex : null;
+    }
+    return null;
+  };
+
   // ── Layout edit mode ────────────────────────────────────────
-  const [layoutMode, setLayoutMode] = useState(false);
   const [copied, setCopied] = useState(false);
   const [overrides, setOverrides] = useState<PosOverrides>(() => {
     try { return JSON.parse(localStorage.getItem('cosmos-layout') ?? '{}') as PosOverrides; }
@@ -195,13 +265,15 @@ export function CosmosMap({
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if ((e.target as HTMLElement)?.matches('input, textarea, [contenteditable="true"]')) return;
+      if (blastSourceId) { setBlastSourceId(null); reset(); return; }
+      if (healthSelectedId) { setHealthSelectedId(null); return; }
       if (!selection) return;
       setSelection(null);
       reset();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selection, reset]);
+  }, [selection, reset, blastSourceId, healthSelectedId]);
 
   // Pan to + select a single node, framing it together with all its
   // directly-connected neighbours. Shared by the spotlight (App-driven) and
@@ -247,6 +319,14 @@ export function CosmosMap({
     focusNode(spotlightTarget.id, spotlightTarget.kind);
     onSpotlightConsumed?.();
   }, [spotlightTarget, focusNode, onSpotlightConsumed]);
+
+  // "Cosmos" reset: drop the inspector selection and reframe to the home view.
+  // Overlays are already closed by the manager (App calls overlay.reset()).
+  useEffect(() => {
+    if (resetNonce === 0) return;
+    setSelection(null);
+    reset();
+  }, [resetNonce, reset]);
 
   useEffect(() => {
     if (!activeScenarioId) {
@@ -417,9 +497,11 @@ export function CosmosMap({
     return ids;
   }, [selection, edges]);
 
-  // Priority: scenario > selection > drift overlay > ownership team filter
+  // Priority: scenario > blast radius > selection > drift overlay > ownership.
+  // Health is a heat map — it tints every node and never dims.
   const isNodeDim = (id: string) => {
     if (scenarioActiveSet) return !scenarioActiveSet.has(id);
+    if (blastReach) return !blastReach.has(id);
     if (selectedTouches) return !selectedTouches.has(id);
     if (driftHighlight) return !driftHighlight.has(id);
     if (teamHighlightSet) return !teamHighlightSet.has(id);
@@ -428,6 +510,7 @@ export function CosmosMap({
 
   const isEdgeDim = (e: EdgeRecord) => {
     if (scenarioActiveSet) return !(scenarioActiveSet.has(e.from) && scenarioActiveSet.has(e.to));
+    if (blastReach) return !(blastReach.has(e.from) && blastReach.has(e.to));
     if (selectedTouches) return !(selectedTouches.has(e.from) && selectedTouches.has(e.to));
     if (driftHighlight) return !(driftHighlight.has(e.from) && driftHighlight.has(e.to));
     if (teamHighlightSet) return !(teamHighlightSet.has(e.from) && teamHighlightSet.has(e.to));
@@ -470,32 +553,41 @@ export function CosmosMap({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target && (e.target as HTMLElement).matches('input, textarea, [contenteditable="true"]')) return;
-      if (e.key === 'l' || e.key === 'L') setLayoutMode(prev => !prev);
+      if (e.key === 'l' || e.key === 'L') overlay.toggle(OVERLAY.mapLayout);
       if (e.key === 'o' || e.key === 'O') toggleOwnershipMode();
       if ((e.key === 'c' || e.key === 'C') && hasDrift) toggleDriftMode();
+      if (e.key === 'b' || e.key === 'B') toggleBlastMode();
+      if (e.key === 'h' || e.key === 'H') toggleHealthMode();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // The manager guarantees exclusivity — opening any of these closes the rest
+  // (and the changelog). We only clear the inspector selection, which the
+  // manager doesn't track.
   function toggleOwnershipMode() {
-    const willOpen = !ownershipMode;
-    setOwnershipMode(willOpen);
-    setOwnerFilter(null);
-    // Ownership legend, drift overlay, and the inspector all share the
-    // top-left slot — opening one closes the others so they never stack.
-    if (willOpen) { setSelection(null); setDriftMode(false); }
+    overlay.toggle(OVERLAY.mapOwnership);
+    setSelection(null);
   }
 
   function toggleDriftMode() {
-    const willOpen = !driftMode;
-    setDriftMode(willOpen);
-    if (willOpen) { setSelection(null); setOwnershipMode(false); setOwnerFilter(null); }
+    overlay.toggle(OVERLAY.mapChanges);
+    setSelection(null);
+  }
+
+  function toggleBlastMode() {
+    overlay.toggle(OVERLAY.mapBlast);
+    setSelection(null);
+  }
+
+  function toggleHealthMode() {
+    overlay.toggle(OVERLAY.mapHealth);
+    setSelection(null);
   }
 
   function exitOwnership() {
-    setOwnershipMode(false);
-    setOwnerFilter(null);
+    overlay.close(OVERLAY.mapOwnership);
   }
 
   function resetLayout() {
@@ -654,9 +746,10 @@ export function CosmosMap({
                 >
                   <ServiceNode
                     service={s}
-                    selected={(selection?.kind === 'service' && selection.id === s.id) || currentShotSet.has(s.id)}
+                    selected={(selection?.kind === 'service' && selection.id === s.id) || blastSourceId === s.id || currentShotSet.has(s.id)}
                     dimmed={isNodeDim(s.id)}
                     driftKind={driftHighlight?.get(s.id) ?? null}
+                    accentRing={accentRingFor(s.id)}
                     expanded={expandedServiceId === s.id}
                     selectedSubId={
                       selection?.kind === 'sub-service' && selection.serviceId === s.id ? selection.subId : null
@@ -665,6 +758,8 @@ export function CosmosMap({
                     topicCount={collapsedCountByService.get(s.id) ?? null}
                     onClick={(id) => {
                       if (layoutMode) return;
+                      if (blastMode) { setBlastSourceId((prev) => (prev === id ? null : id)); return; }
+                      if (healthMode) { setHealthSelectedId((prev) => (prev === id ? null : id)); return; }
                       exitOwnership();
                       setSelection((prev) =>
                         prev?.kind === 'service' && prev.id === id ? null : { kind: 'service', id },
@@ -709,12 +804,15 @@ export function CosmosMap({
                   >
                     <TopicNode
                       topic={meta ? { ...t, labelSide: t.labelSide ?? (meta.above ? 'above' : 'below') } : t}
-                      selected={(selection?.kind === 'topic' && selection.id === t.id) || currentShotSet.has(t.id)}
+                      selected={(selection?.kind === 'topic' && selection.id === t.id) || blastSourceId === t.id || currentShotSet.has(t.id)}
                       dimmed={isNodeDim(t.id)}
                       driftKind={driftHighlight?.get(t.id) ?? null}
-                      showLabel={!!meta || topicLabelVisible(t.x, t.y) || (scenarioNodeSet?.has(t.id) ?? false)}
+                      accentRing={accentRingFor(t.id)}
+                      showLabel={!!meta || topicLabelVisible(t.x, t.y) || (scenarioNodeSet?.has(t.id) ?? false) || blastReach?.has(t.id) === true}
                       onClick={(id) => {
                         if (layoutMode) return;
+                        if (blastMode) { setBlastSourceId((prev) => (prev === id ? null : id)); return; }
+                        if (healthMode) return;
                         exitOwnership();
                         setSelection((prev) =>
                           prev?.kind === 'topic' && prev.id === id ? null : { kind: 'topic', id },
@@ -737,24 +835,42 @@ export function CosmosMap({
 
             {/* Idle ambient traffic — only when no scenario is active.
                 Makes the cosmos feel alive in standby. */}
-            <AmbientPackets active={!activeScenarioId} />
+            <AmbientPackets active={!activeScenarioId} density={trafficDensity} />
           </g>
         </svg>
 
+        {/* Traffic-density controls — left of the zoom +/- panel. */}
+        <MapStepper
+          className="lc-map-stepper--traffic"
+          onIncrement={() => bumpTrafficDensity(1.4)}
+          onDecrement={() => bumpTrafficDensity(1 / 1.4)}
+          incrementDisabled={trafficDensity >= TRAFFIC_MAX}
+          decrementDisabled={trafficDensity <= TRAFFIC_MIN}
+          incrementAriaLabel="More traffic"
+          decrementAriaLabel="Less traffic"
+          resetLabel={`${trafficDensity}×`}
+          onReset={() => setTrafficDensity(1)}
+          resetTitle="Traffic amount — click to reset to default"
+          resetAriaLabel="Reset traffic amount"
+        />
+
         {/* Zoom controls (bottom-right) */}
-        <div className="lc-map-zoom" data-no-pan="true">
-          <button type="button" className="lc-map-zoom-btn" onClick={() => zoomBy(1.2)} aria-label="Zoom in">+</button>
-          <button type="button" className="lc-map-zoom-btn" onClick={() => zoomBy(1 / 1.2)} aria-label="Zoom out">−</button>
-          <button type="button" className="lc-map-zoom-btn lc-map-zoom-reset" onClick={reset} aria-label="Reset view">
-            {Math.round(view.scale * 100)}%
-          </button>
-        </div>
+        <MapStepper
+          className="lc-map-stepper--zoom"
+          onIncrement={() => zoomBy(1.2)}
+          onDecrement={() => zoomBy(1 / 1.2)}
+          incrementAriaLabel="Zoom in"
+          decrementAriaLabel="Zoom out"
+          resetLabel={`${Math.round(view.scale * 100)}%`}
+          onReset={reset}
+          resetAriaLabel="Reset view"
+        />
 
         {/* Layout edit mode controls */}
         {<div className="lc-layout-controls" data-no-pan="true" data-active={layoutMode ? 'true' : 'false'}>
           {layoutMode ? (
             <>
-              <button type="button" className="lc-layout-btn lc-layout-btn--done" onClick={() => setLayoutMode(false)}>
+              <button type="button" className="lc-layout-btn lc-layout-btn--done" onClick={() => overlay.close(OVERLAY.mapLayout)}>
                 Done
               </button>
               <button type="button" className={`lc-layout-btn lc-layout-btn--copy${copied ? ' lc-layout-btn--done' : ''}`} onClick={copyCoordinates} title="Copy overridden coordinates to clipboard">
@@ -788,7 +904,25 @@ export function CosmosMap({
               >
                 Ownership
               </button>
-              <button type="button" className="lc-layout-btn" onClick={() => setLayoutMode(true)}>
+              <button
+                type="button"
+                className={`lc-layout-btn${blastMode ? ' lc-layout-btn--done' : ''}`}
+                onClick={toggleBlastMode}
+                title="Blast radius — what breaks if you change a node (B)"
+                aria-pressed={blastMode}
+              >
+                Blast radius
+              </button>
+              <button
+                type="button"
+                className={`lc-layout-btn${healthMode ? ' lc-layout-btn--done' : ''}`}
+                onClick={toggleHealthMode}
+                title="Service health heat map + on-call (H)"
+                aria-pressed={healthMode}
+              >
+                Health
+              </button>
+              <button type="button" className="lc-layout-btn" onClick={() => overlay.open(OVERLAY.mapLayout)}>
                 Edit layout
               </button>
             </>
@@ -811,9 +945,27 @@ export function CosmosMap({
           />
         )}
 
-        {selection && (
+        {blastMode && !layoutMode && (
+          <BlastLegend
+            result={blastResult}
+            sourceName={blastSourceId ? SERVICES_BY_ID[blastSourceId]?.name ?? TOPICS_BY_ID[blastSourceId]?.name ?? blastSourceId : null}
+            onFocus={(nodeId) => focusNode(nodeId, TOPICS_BY_ID[nodeId] ? 'topic' : 'service')}
+            onClear={() => setBlastSourceId(null)}
+          />
+        )}
+
+        {healthMode && !layoutMode && (
+          <>
+            <HealthLegend />
+            {healthSelectedId && (
+              <HealthCard serviceId={healthSelectedId} onClose={() => setHealthSelectedId(null)} />
+            )}
+          </>
+        )}
+
+        {selection && !blastMode && !healthMode && (
           <div
-            className={`lc-map-panel lc-map-panel--${selection.kind}`}
+            className={`lc-map-panel lc-map-panel--${selection.kind}${driftMode || ownershipMode ? ' lc-map-panel--right' : ''}`}
             data-no-pan="true"
             onClick={(e) => e.stopPropagation()}
           >
