@@ -1,0 +1,633 @@
+gpt:
+====
+
+# Review by GPT-5.6 Luna
+
+### ⚠️ Issues Found (6): 4 🔴 | 2 🟡
+
+| #  | Category    | Severity  | Conf | Title                                                                                                | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| -- | ----------- | --------- | ---- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| I1 | Security    | 🔴 High   | C3   | The workflow gives a broad write-capable GitHub token to code that does not need it                  | `.github/workflows/cosmos-sync.yml:93-99,123-133` passes `COSMOS_SYNC_PAT` into both the clone step and the entire nightly process. The README explicitly requires a PAT with `repo` scope. That token can therefore be used by any compromised dependency, script, or future code executed by the workflow to modify private repositories, not just read them. The actual clone operation only needs read access.                                                                                                                                                                                                        |
+| I2 | Correctness | 🔴 High   | C3   | A wrong AI “no drift” decision permanently hides later changes                                       | `drift-sync/scripts/sync-nightly.ts:245-258` advances the baseline whenever Claude returns `no_drift` with anything except `low` confidence. Then `sync-nightly.ts:849-851` creates an auto-merged PR for that baseline. A false negative (the AI misses a real architecture change) therefore becomes the new starting point, so the missed change is never examined again. This is especially dangerous because the system is supposed to detect changes that humans may not notice.                                                                                                                                    |
+| I3 | Security    | 🔴 High   | C3   | Source-code content is allowed to influence an AI agent that can modify the repository               | `drift-sync/scripts/diff-repo.ts:196-210` sends source-code diffs to Claude, including changed comments and strings. The resulting verdict is then placed directly into the applier prompt at `drift-sync/scripts/apply-edits.ts:162-169`, and the applier has `write_file` access to `src/scenarios/*`. This creates a prompt-injection path (malicious text in source code can try to give the AI new instructions). A compromised source repository could therefore attempt to make the agent produce unauthorized Cosmos edits. The draft-PR requirement reduces the impact, but it does not remove the attack path.  |
+| I4 | Security    | 🔴 High   | C3   | The AI can read arbitrary files from every cloned repository, including secrets                      | `drift-sync/scripts/lib/agent.ts:43-60` allows `read_file` on any file beneath `reposRoot`, with no secret-file denylist. The same workspace contains complete cloned repositories. A request to read `.env`, credentials, certificates, configuration secrets, or other sensitive files therefore succeeds. Those contents are then sent to Anthropic through the agent conversation. The repository explicitly says the agent is allowed to interrogate source repositories, but there is no boundary preventing it from reading unrelated secrets.                                                                     |
+| I5 | Correctness | 🟡 Medium | C3   | The 200-commit shallow clone can make the baseline impossible to diff                                | `drift-sync/scripts/clone-repos.ts:125-130` clones each repository with `--depth=200`, while `drift-sync/scripts/diff-repo.ts:103-116` assumes the stored baseline SHA is available locally. If the baseline is more than 200 commits behind the current branch, the baseline commit may not exist in the shallow clone. The subsequent `git diff <baseline>..<HEAD>` can then fail and the nightly check cannot inspect that repository.                                                                                                                                                                                 |
+| I6 | Correctness | 🟡 Medium | C3   | “Validation passed” does not prove that the generated architecture map matches the real repositories | `drift-sync/scripts/validate.ts:381-390` runs only internal checks unless `--source-check` is explicitly supplied. The applier runs only `npm run validate` at `drift-sync/scripts/apply-edits.ts:141-143,179-195`. Therefore an AI can add a valid-looking service, topic, or step that points to nonexistent source behavior, and the validator still reports success. The system's strongest validation is structural rather than factual.                                                                                                                                                                             |
+
+### 🛠️ Recommendations
+
+| #  | Severity  | How to Fix                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| -- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R1 | 🔴 High   | Replace the broad PAT with a read-only credential for cloning. For example, use a GitHub App installation token with only `Contents: read` on the tracked repositories, while keeping the workflow's `GITHUB_TOKEN` limited to this Cosmos repository for PR creation. Do not expose the source-repository credential to `sync-nightly` or arbitrary child processes. This prevents the drift tool from becoming a write credential for every source repository.                                                             |
+| R2 | 🔴 High   | Do not automatically advance the baseline solely because an AI said `no_drift`. For example: `no_drift → keep baseline unchanged → require deterministic checks or human approval before advancing`. A safer version is to advance only when deterministic evidence confirms that the changed files cannot affect the map, or keep a rolling checkpoint so older changes remain auditable. This prevents one incorrect AI decision from permanently hiding a real architectural change.                                      |
+| R3 | 🔴 High   | Treat repository content as untrusted data, not instructions. Separate the evidence from the agent instructions and explicitly tell the model that comments, strings, documentation, and source text are data only. More importantly, make the applier consume a strict machine-validated change format such as `{file, operation, targetId, expectedOldValue, newValue}` instead of allowing the first AI to freely describe edits. This makes a malicious source comment much less able to steer the write-capable agent.  |
+| R4 | 🔴 High   | Add a hard secret denylist before exposing files to the agent. For example: `DENY = [/^\\.env/, /credentials/i, /secret/i, /\\.pem$/, /\\.key$/, /token/i]`. `read_file` and `grep` should reject those paths before reading them. Also remove the `VITE_ANTHROPIC_API_KEY → ANTHROPIC_API_KEY` fallback in `drift-sync/scripts/lib/agent.ts:36-37`; a `VITE_*` variable is conventionally intended for browser-visible configuration and should never be treated as a server secret.                                        |
+| R5 | 🟡 Medium | Stop relying on a fixed shallow depth. The simplest safe fix is to fetch the exact baseline when it is missing: `git fetch origin <baselineSha> --depth=1`. Alternatively use a deeper/unshallow fetch when `git cat-file -e <baselineSha>^{commit}` fails. This guarantees that the stored baseline can actually be compared with the current HEAD.                                                                                                                                                                         |
+| R6 | 🟡 Medium | Make factual validation part of the live applier gate. For example: `npm run validate -- --source-check --repos-root "$REPOS_ROOT"`. Better still, validate every changed topic and service against the corresponding source repository before allowing the PR to be created. This changes validation from “the TypeScript data is internally consistent” to “the data is also supported by the actual repositories.”                                                                                                        |
+
+### Overall Verdict
+
+🔴 Critical issues found — address before further work.
+
+Yes. Looking at **or-cosmos-os specifically**, I think the core idea is already interesting: an architecture map that watches real repositories and detects architectural drift. I would **not** add generic dashboard features. I'd make it much more powerful as an **architecture intelligence system**.
+
+My top ideas:
+
+| Priority | Feature                                  | Why it's cool                                                             |
+| -------- | ---------------------------------------- | ------------------------------------------------------------------------- |
+| 🔥 1     | **Architecture Timeline / Time Machine** | See how the architecture evolved commit-by-commit                         |
+| 🔥 2     | **Impact Analysis**                      | "If I change this service/topic, what breaks?"                            |
+| 🔥 3     | **Architecture PR Reviewer**             | Automatically comment on PRs when they introduce architectural drift      |
+| 🔥 4     | **Ask Cosmos**                           | Natural-language questions over the entire architecture                   |
+| 🔥 5     | **Architecture Health Score**            | Quantify coupling, bottlenecks, stale components, ownership gaps          |
+| 🔥 6     | **Drift Explainability**                 | Show exactly *why* Cosmos thinks something changed                        |
+| 7        | **Dependency Graph**                     | Visual graph of services → queues → DBs → external APIs                   |
+| 8        | **Ownership Map**                        | Connect services/components to teams and CODEOWNERS                       |
+| 9        | **Architecture Rules**                   | User-defined rules such as "Service A must never call Service B directly" |
+| 10       | **Architecture Changelog**               | Automatically generate human-readable architecture changes                |
+
+### 1. Architecture Time Machine ⭐
+
+This could be **really impressive in an interview**.
+
+Instead of Cosmos only showing:
+
+> Current architecture
+
+allow:
+
+> **Show me the architecture on March 1st.**
+
+Then:
+
+```text
+March 1
+Orders → Kafka → Payments
+
+March 15
+Orders → Kafka → Payments
+                  ↓
+                Fraud
+
+April 2
+Orders → Kafka → Payments
+       ↘
+        Fraud
+```
+
+You already have the historical data needed for this concept because you're tracking repository state/baselines.
+
+The killer UI would be:
+
+**"What changed in our architecture during the last 30 days?"**
+
+and Cosmos generates:
+
+> 3 new services
+> 2 new Kafka topics
+> 1 synchronous dependency introduced
+> 4 services became dependent on Payments
+> Fraud processing moved from synchronous → asynchronous
+
+That's much more valuable than simply displaying a diagram.
+
+---
+
+### 2. "What breaks if I change X?" ⭐
+
+Turn Cosmos into an **impact-analysis engine**.
+
+User clicks:
+
+```text
+Payments Service
+```
+
+Cosmos shows:
+
+```text
+Payments
+   │
+   ├── Orders
+   ├── Billing
+   ├── Fraud
+   └── Notifications
+```
+
+Then:
+
+> **Potential impact of changing Payments API**
+
+```text
+HIGH
+├── Orders
+├── Billing
+
+MEDIUM
+├── Fraud
+
+LOW
+└── Notifications
+```
+
+And ideally:
+
+> These 7 repositories contain references to `PaymentsClient`.
+
+This is an excellent feature because it transforms Cosmos from:
+
+**"Here is our architecture."**
+
+into:
+
+**"Use Cosmos to make engineering decisions."**
+
+---
+
+### 3. Architecture-aware PR Reviewer ⭐⭐⭐
+
+This might be my **#1 feature from a product perspective**.
+
+When somebody opens a PR:
+
+```text
+PR #1842
+
+Add direct Orders → Payments HTTP dependency
+```
+
+Cosmos comments:
+
+> ⚠️ Architecture drift detected.
+
+```text
+Existing architecture:
+
+Orders → Kafka → Payments
+
+PR introduces:
+
+Orders ─────HTTP────→ Payments
+```
+
+Then:
+
+> This creates a second communication path between Orders and Payments and bypasses the existing asynchronous flow.
+
+And potentially:
+
+```text
+Architecture rule violated:
+
+RULE-007
+Orders must communicate with Payments through Kafka.
+```
+
+That turns Cosmos into something that developers encounter **during normal development**, rather than a dashboard they occasionally visit.
+
+---
+
+### 4. "Ask Cosmos" 🤖
+
+A chat interface over the architecture:
+
+```text
+You:
+Why does Payments depend on Kafka?
+
+Cosmos:
+Payments consumes 3 topics:
+- payment.created
+- payment.refund
+- payment.failed
+
+The dependency was introduced in PR #1832...
+```
+
+Or:
+
+```text
+Which services have the highest coupling?
+
+→ Payments
+→ User
+→ Orders
+```
+
+Or:
+
+```text
+What services would I need to modify
+to replace Kafka with RabbitMQ?
+```
+
+This fits extremely well with the AI aspect of the project.
+
+---
+
+### 5. Architecture Health Score
+
+Something like:
+
+```text
+COSMOS HEALTH
+
+       82 / 100
+
+Architecture
+████████████████░░░░ 82
+
+Coupling             71
+Drift                94
+Documentation        88
+Ownership            63
+Dependencies         79
+```
+
+Then explain the score:
+
+```text
+⚠ 3 architectural risks
+
+1. Payments has 14 dependents
+2. Orders has 2 undocumented dependencies
+3. User → Billing creates a circular dependency
+```
+
+The important part is **not the number itself**.
+
+The important part is making the score explainable.
+
+---
+
+### 6. Architecture Rules Engine
+
+This would make Cosmos much more interesting.
+
+For example:
+
+```yaml
+rules:
+
+  - name: payments-boundary
+    description: Orders must not call Payments directly
+    deny:
+      from: orders
+      to: payments
+      protocol: http
+
+  - name: async-processing
+    description: Heavy processing must use a queue
+    require:
+      service: document-processing
+      dependency: queue
+```
+
+Then your nightly drift detector isn't merely asking:
+
+> "Did the architecture change?"
+
+It can ask:
+
+> **"Did somebody violate an architectural rule?"**
+
+That's a much stronger product.
+
+---
+
+### 7. "Explain this architecture"
+
+Click any node:
+
+```text
+Payments
+```
+
+and Cosmos generates:
+
+> **What is Payments?**
+
+```text
+Purpose
+Handles payment authorization and refunds.
+
+Incoming
+Orders
+Billing
+
+Outgoing
+Stripe
+Kafka
+
+Data
+PostgreSQL
+
+Repositories
+payments-api
+payments-worker
+
+Last architectural change
+2026-07-31
+```
+
+This is basically **AI-generated architecture documentation that stays synchronized with code**.
+
+That is a very compelling concept.
+
+---
+
+### 8. Architecture Changelog
+
+Instead of developers reading a huge diff:
+
+```text
+Architecture changes — Week 32
+
+🟢 Added
+  Fraud Service
+
+🟡 Changed
+  Orders → Payments communication
+
+🔴 Risk
+  Orders now has a synchronous dependency on Payments
+
+📦 Removed
+  Legacy Payment Worker
+```
+
+And each item links directly to:
+
+```text
+PR
+commit
+repository
+code
+architecture node
+```
+
+---
+
+### 9. "Dead Architecture" Detection
+
+This one is subtle and potentially very useful.
+
+Cosmos could detect:
+
+```text
+Architecture says:
+
+Orders → LegacyPaymentService
+```
+
+but the repository hasn't referenced it for 4 months.
+
+Then:
+
+> ⚠️ Possibly stale architecture
+
+Conversely:
+
+```text
+Repository contains:
+
+FraudService
+```
+
+but Cosmos doesn't know about it.
+
+> ⚠️ Undocumented architecture
+
+So you get **two-way drift**:
+
+```text
+CODE → ARCHITECTURE
+ARCHITECTURE → CODE
+```
+
+That's much more powerful than simply detecting code changes.
+
+---
+
+### 10. Ownership / "Who do I talk to?"
+
+Connect GitHub `CODEOWNERS`, commits, PRs, etc.
+
+Click:
+
+```text
+Payments
+```
+
+and show:
+
+```text
+Owner
+Payments Team
+
+Repositories
+payments-api
+payments-worker
+
+Recent contributors
+...
+
+Slack / Teams
+#payments
+
+CODEOWNERS
+@payments-team
+```
+
+Then:
+
+> **Who owns the service that is blocking Orders?**
+
+Cosmos answers it.
+
+---
+
+## If this were my project
+
+I wouldn't implement all 10.
+
+I'd build a very focused **v2** around this:
+
+```text
+                 ┌─────────────────────┐
+                 │      COSMOS          │
+                 │ Architecture Brain  │
+                 └──────────┬──────────┘
+                            │
+        ┌───────────────────┼──────────────────┐
+        ↓                   ↓                  ↓
+   GitHub PRs          Repositories        Architecture
+        │                   │                  │
+        ↓                   ↓                  ↓
+  PR Reviewer         Drift Detection      Graph
+        │                   │                  │
+        └───────────────────┼──────────────────┘
+                            ↓
+                    ┌───────────────┐
+                    │   AI Layer    │
+                    └───────┬───────┘
+                            ↓
+               ┌─────────────────────────┐
+               │ Ask / Explain / Impact  │
+               └─────────────────────────┘
+```
+
+### The killer demo
+
+If you want this to be impressive for a **senior/architect interview**, I'd specifically build this flow:
+
+**1. Open a PR**
+
+```text
+feat: add direct payments API call
+```
+
+**2. Cosmos detects**
+
+```text
+🔴 Architectural drift
+```
+
+**3. Shows before/after**
+
+```text
+BEFORE
+
+Orders → Kafka → Payments
+
+
+AFTER
+
+Orders ─────HTTP────→ Payments
+   │
+   └────→ Kafka ───→ Payments
+```
+
+**4. Explains the consequence**
+
+> Orders now has two communication paths to Payments. This increases coupling and can cause inconsistent payment state.
+
+**5. Shows impacted systems**
+
+```text
+Potentially affected:
+Orders
+Payments
+Billing
+Fraud
+```
+
+**6. Suggests a fix**
+
+> Use the existing `payment.created` Kafka flow instead of introducing a direct HTTP dependency.
+
+**7. Lets the developer ask**
+
+> "Why is Kafka used here?"
+
+And Cosmos answers from the actual repository history/code.
+
+That would make **or-cosmos-os feel less like an architecture visualization tool and more like an AI architecture guardian**. That's the direction I'd push it.
+
+==================
+
+grok:
+=======
+
+# Review by Grok 4.5
+
+### ⚠️ Issues Found (5): 2 🔴 | 2 🟡 | 1 🔵
+
+| #   | Category     | Severity  | Conf | Title                                      | Description |
+| --- | ------------ | --------- | ---- | ------------------------------------------ | ----------- |
+| I1  | Security     | 🔴 High   | C3   | Agent path checks do not stop symlink escapes | The safety check that is supposed to keep the AI agent inside the allowed folder only looks at the text of the path after normalising it. It never asks the operating system for the real final location of the file. A tracked source repo can contain a symlink (a special file that points somewhere else). When the agent asks to read or search through that symlink, the operating system follows it and the agent can see files outside the intended workspace. Real-world impact: an attacker who can push to any watched repo, or a compromised internal repo, can plant a symlink that lets the nightly AI agent read secrets or other private files that happen to sit on the CI runner. Exact location: `drift-sync/scripts/lib/agent.ts:46-53` (`resolveSafe` uses `path.resolve` then `startsWith`; the same pattern is repeated for writes at lines 94-98). |
+| I2  | Security     | 🔴 High   | C3   | GitHub token is put into the clear-text clone URL | When the tool clones source repositories it builds a URL that contains the personal access token (PAT) in plain sight: `https://x-access-token:${ghToken}@github.com/...`. That string becomes part of the process command line. On a shared CI runner the token can appear in process lists, debug logs, or audit trails. Real-world impact: anyone who can see the runner’s process list or the full job log can steal the PAT and use it against the organisation’s repositories. Exact location: `drift-sync/scripts/clone-repos.ts:130-132`. |
+| I3  | Correctness  | 🟡 Medium | C2   | Applier can change the map as long as a weak internal check passes | The AI that writes fixes is only allowed to touch `src/scenarios/` and one confirmation file. After each change it runs `npm run validate`. That validator mainly checks that ids point to each other inside the map files; the deeper cross-repo checks are optional and turned off by default in CI. Real-world impact: the agent can invent or delete services, topics or steps that still look consistent to the internal checker. The change lands in a draft PR, so a human should catch it, but the safety net is thinner than the README implies. Exact location: `drift-sync/scripts/apply-edits.ts:87` (writable surface) together with `drift-sync/scripts/validate.ts` (default behaviour skips `--source-check`). |
+| I4  | Architecture | 🟡 Medium | C3   | Nightly agent is given a very powerful tool surface with little runtime guardrails | The same agent loop that investigates drift is also given `write_file` and a restricted `run_command`. There is no separate “dry-run then confirm” step inside the loop, no hard size limit on what may be written, and no second independent model that double-checks the proposed edit before the PR is opened. Real-world impact: a single model hallucination or prompt-injection from a source-repo comment can produce a large, incorrect map change that only the later human review will catch. Scope: the whole agent infrastructure under `drift-sync/scripts/lib/agent.ts` and the call sites in `apply-edits.ts` / `sync-nightly.ts`. |
+| I5  | DX           | 🔵 Low    | C3   | Env-loader silently accepts a Vite-prefixed secret name | The helper that loads API keys also looks for `VITE_ANTHROPIC_API_KEY`. That name is normally used for front-end environment variables that get baked into the browser bundle. Real-world impact: a developer who accidentally puts the real Anthropic key into a Vite variable could ship it to the public demo site. The code itself does not expose it today, but the dual name is a foot-gun. Exact location: `drift-sync/scripts/lib/agent.ts:38-40`. |
+
+### 🛠️ Recommendations
+
+| #   | Severity  | How to Fix |
+| --- | --------- | ---------- |
+| R1  | 🔴 High   | After resolving the path, call the operating-system real-path function and re-check the result. Example (Node): `const real = fs.realpathSync.native(resolved); if (!(real.startsWith(root + path.sep) \|\| real === root)) throw \ldots`. This stops the agent from following any symlink that points outside the allowed folder. |
+| R2  | 🔴 High   | Never put the token in the URL. Use a credential helper or the environment variable that Git already understands: set `GIT_ASKPASS` or simply `git -c http.extraHeader="Authorization: Bearer ${token}" clone \ldots`. The token never appears on the command line and is far harder to leak. |
+| R3  | 🟡 Medium | Make the stronger validation the default for the applier (or run it automatically after every write). At minimum, fail the PR creation if `--source-check` would have produced warnings. Also add a simple size / diff-stat guard so a single write cannot replace an entire multi-thousand-line file without an extra confirmation step. |
+| R4  | 🟡 Medium | Split the “investigate” agent from the “apply” agent, or add a second cheap model that only answers “does this diff look like a correct Cosmos update?” before the PR is opened. Keep the existing draft-PR and human-review step; the extra check just reduces the volume of bad drafts. |
+| R5  | 🔵 Low    | Remove the `VITE_ANTHROPIC_API_KEY` fallback. Document that only `ANTHROPIC_API_KEY` is accepted for the drift-sync scripts. |
+
+### Overall Verdict
+
+🟡 Healthy foundation — targeted improvements recommended.
+
+Here are practical, high-leverage ideas that fit the existing design (data lives in TypeScript files, the map is the source of truth, flows are playable, and Drift Sync already uses an AI agent).
+
+### High-impact, relatively small
+
+1. **Live “what changed since last night” overlay**  
+   After Drift Sync opens a PR, surface a subtle badge or glowing edge on the map for the affected services/topics. Clicking it jumps straight to the PR or the evidence lines. Makes the honesty loop visible without leaving the galaxy.
+
+2. **Scenario “diff mode”**  
+   Let someone pick two versions of a scenario (or the map before/after a Drift Sync PR) and play them side-by-side or as overlaid comets in different colors. Great for reviewing architecture changes.
+
+3. **Payload inspector with schema awareness**  
+   When a step shows a payload, highlight fields that match known types or that recently drifted. Even a simple “this field was added in the last sync” tooltip would make the map more trustworthy.
+
+4. **Keyboard-first power user mode**  
+   Already has deep links and layout edit (L). Add a command palette (Cmd+K) for “jump to service”, “play scenario X”, “copy current coords”, “open owner Slack”, etc. Fits the polished feel of the current UI.
+
+5. **Export as living documentation**  
+   One-click generate a Markdown or Notion page that embeds the current scenario steps + payloads, or a static SVG of the isolated map for a given domain. Useful when someone still needs to drop a diagram into a design doc.
+
+### Medium-effort, very cool
+
+6. **Interactive “what-if” / blast-radius mode**  
+   Click a service or topic and the map dims everything that is *not* reachable from it (or that would break if it went down). Combine with the existing ecosystem expansion. Instantly answers “who depends on this?” without leaving the visual.
+
+7. **Time-travel / historical map**  
+   Since state.json already tracks baseline SHAs, store lightweight map snapshots (or just the relevant TypeScript diffs) and let users scrub a timeline. “Show me the cosmos as of last Tuesday” becomes possible.
+
+8. **Multiplayer presence (lightweight)**  
+   When several people have the same map open, show faint cursors or “Alice is looking at Order Service”. Purely client-side via a simple presence channel (or even just WebSocket to a tiny free service). Makes architecture reviews feel collaborative.
+
+9. **Auto-generated “critical path” scenarios**  
+   Extend the Claude skills so `/add-scenario critical-path payments` walks the real call graph and produces a ready-to-play scenario with real payloads. The existing `/add-scenario` skill is already close; this just focuses it on the highest-value flows.
+
+10. **Health / ownership heat map**  
+    Color or pulse services by last-commit age, open PR count, or on-call status (pulled from the same repos Drift Sync already clones). Turns the map into a lightweight ops view without becoming a monitoring tool.
+
+### Bigger / more ambitious
+
+11. **Bidirectional sync with code**  
+    Right now Drift Sync is mostly “reality → map”. Add the reverse: when someone edits a service description or ownership in the map and merges, optionally open a tiny PR in the real service repo that updates a `COSMOS.md` or CODEOWNERS-style file. Closes the loop.
+
+12. **Scenario recording from real traffic**  
+    A lightweight browser extension or proxy that records a real user journey and turns the sequence of HTTP/Kafka hops into a draft scenario file. The AI skill then cleans it up and proposes the PR. Turns “I just did a checkout, document it” into one click.
+
+13. **3D / spatial audio optional mode**  
+    The current SVG + GSAP MotionPath is already excellent. A toggleable Three.js layer (or even CSS 3D transforms) that lets you fly through the galaxy, with subtle spatial audio on comet passes, would be pure delight for demos and onboarding. Keep the 2D mode as default.
+
+14. **Team “nebula” ownership view**  
+    Collapse the whole map into team-colored nebulae that expand on click. Combine with the existing ecosystem expansion. Makes org-level architecture reviews far more readable than a flat star field when you have 80+ services.
+
+15. **Cost / latency annotations on edges**  
+    Allow optional metadata on steps (p99 latency, approximate cost per call, error budget). During playback the comet can change thickness or color, and the step panel shows the numbers. Still pure data files—no runtime required.
+
+### Quick wins that cost almost nothing
+
+- Dark/light theme already exists; add a “presentation” theme that hides chrome and makes comets larger for conference talks.
+- “Copy share link with current step + layout overrides” (layout is already in localStorage).
+- Tiny “last Drift Sync run” footer that links to the latest workflow summary.
+- Allow pinning a scenario to the URL hash so a Slack message can open exactly the right flow on the right step.
+
+The strongest direction is anything that makes the **honesty loop** (Drift Sync → visible on the map → easy review → merge) more delightful and the **playable flows** more useful for real debugging and onboarding. The current foundation is already unusually clean for this kind of tool; the highest-ROI additions stay inside the “TypeScript files are the source of truth + AI helps keep them honest” philosophy.
+
+Want me to sketch the data-model changes or a concrete implementation outline for any of these?
+
+=============
+
