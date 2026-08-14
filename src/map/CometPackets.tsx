@@ -24,6 +24,8 @@ interface CometPacketsProps {
    * service's sub-services instead of just the service itself.
    */
   expanded?: Set<string> | null;
+  /** Multiplier on comet radii — presentation mode fattens the packets. */
+  cometScale?: number;
 }
 
 interface FlightHandles {
@@ -51,7 +53,7 @@ const PROTO_DURATION: Record<Protocol, number> = {
  * front of nodes. Receives one shot at a time and animates it on
  * the rendered edge paths via GSAP MotionPathPlugin.
  */
-export function CometPackets({ shot, speed, onShotComplete, expanded }: CometPacketsProps) {
+export function CometPackets({ shot, speed, onShotComplete, expanded, cometScale = 1 }: CometPacketsProps) {
   const registry = useEdgeRegistry();
   const layerRef = useRef<SVGGElement>(null);
   const flightsRef = useRef<FlightHandles[]>([]);
@@ -85,7 +87,7 @@ export function CometPackets({ shot, speed, onShotComplete, expanded }: CometPac
       // for each step starts at t=0 of the timeline (parallel steps fire together).
       let cursor = 0;
       for (const leg of legs) {
-        const handles = createFlight(layerRef.current, leg);
+        const handles = createFlight(layerRef.current, leg, cometScale);
         if (!handles) continue;
         flightsRef.current.push(handles);
 
@@ -169,7 +171,7 @@ export function CometPackets({ shot, speed, onShotComplete, expanded }: CometPac
   return <g ref={layerRef} />;
 }
 
-function createFlight(parent: SVGGElement, leg: EdgeLeg): FlightHandles | null {
+function createFlight(parent: SVGGElement, leg: EdgeLeg, scale: number): FlightHandles | null {
   const ns = 'http://www.w3.org/2000/svg';
   const color = PROTO_COLOR[leg.proto];
 
@@ -178,21 +180,21 @@ function createFlight(parent: SVGGElement, leg: EdgeLeg): FlightHandles | null {
   group.setAttribute('opacity', '1');
 
   const tail = document.createElementNS(ns, 'circle');
-  tail.setAttribute('r', '9');
+  tail.setAttribute('r', String(9 * scale));
   tail.setAttribute('fill', color);
   tail.setAttribute('fill-opacity', '0.18');
   tail.setAttribute('filter', 'url(#cosmos-packet-glow)');
   group.appendChild(tail);
 
   const glow = document.createElementNS(ns, 'circle');
-  glow.setAttribute('r', '5.5');
+  glow.setAttribute('r', String(5.5 * scale));
   glow.setAttribute('fill', color);
   glow.setAttribute('fill-opacity', '0.55');
   glow.setAttribute('filter', 'url(#cosmos-packet-glow)');
   group.appendChild(glow);
 
   const head = document.createElementNS(ns, 'circle');
-  head.setAttribute('r', '3');
+  head.setAttribute('r', String(3 * scale));
   head.setAttribute('fill', '#FFFFFF');
   group.appendChild(head);
 

@@ -244,6 +244,207 @@ body:has(.lc-map-stage[data-panning='true']) * {
 /* Grabbing cursor while dragging a node */
 .lc-map-svg[data-layout='true'] { cursor: default; }
 
+/* ── Ownership overlay legend ──────────────────────────────── */
+.lc-owner-legend {
+  position: absolute;
+  left: 14px;
+  top: 64px;
+  width: 210px;
+  padding: 12px 12px 8px;
+  background: color-mix(in srgb, var(--surface-1) 88%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 18px 44px -22px rgba(0, 0, 0, 0.8);
+  z-index: 11;
+  animation: lc-menu-in 200ms cubic-bezier(0.2, 0.9, 0.3, 1.1);
+}
+.lc-owner-legend-title {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.lc-owner-legend-hint {
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-3);
+  opacity: 0.75;
+}
+.lc-owner-legend-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.lc-owner-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-std),
+              border-color var(--dur-fast) var(--ease-std),
+              opacity var(--dur-fast) var(--ease-std);
+}
+.lc-owner-legend-item:hover { background: var(--bg-surface-2); }
+.lc-owner-legend-item[data-active='true'] {
+  border-color: var(--border);
+  background: var(--bg-surface-2);
+  color: var(--text-1);
+}
+.lc-owner-legend-item[data-dimmed='true'] { opacity: 0.45; }
+.lc-owner-legend-swatch {
+  width: 11px; height: 11px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  box-shadow: 0 0 8px -1px currentColor;
+}
+.lc-owner-legend-label { flex: 1; text-align: left; }
+.lc-owner-legend-count {
+  font-size: 10px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Drift Sync status pill (topbar-right) ─────────────────── */
+.lc-drift-footer {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--bg-surface) 70%, transparent);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-decoration: none;
+  transition: color var(--dur-fast) var(--ease-std), border-color var(--dur-fast) var(--ease-std);
+}
+.lc-drift-footer:hover {
+  color: var(--text-1);
+  border-color: color-mix(in srgb, var(--svc-green) 55%, var(--border));
+}
+.lc-drift-footer svg { opacity: 0.7; }
+.lc-drift-footer-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--svc-green);
+  box-shadow: 0 0 8px 1px color-mix(in srgb, var(--svc-green) 80%, transparent);
+  animation: lc-drift-pulse 2.6s ease-in-out infinite;
+}
+@keyframes lc-drift-pulse {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 1; }
+}
+
+/* ── Present button (topbar) + exit hint ───────────────────── */
+.lc-present-btn {
+  height: 30px;
+  padding: 0 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--bg-surface) 70%, transparent);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-std), border-color var(--dur-fast) var(--ease-std);
+}
+.lc-present-btn:hover {
+  color: var(--text-1);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+.lc-present-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--surface-1) 82%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity var(--dur-fast) var(--ease-std);
+}
+.lc-present-hint:hover { opacity: 1; }
+.lc-present-hint kbd {
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg-surface-2);
+  font-size: 9px;
+  color: var(--text-2);
+}
+
+/* ── Copy-share-link button (playback controls) ────────────── */
+.lc-pb-share {
+  height: 26px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease-std), border-color var(--dur-fast) var(--ease-std), background var(--dur-fast) var(--ease-std);
+}
+.lc-pb-share:hover { color: var(--text-1); background: var(--bg-surface-2); }
+.lc-pb-share[data-state='ok'] {
+  color: var(--svc-green);
+  border-color: color-mix(in srgb, var(--svc-green) 55%, var(--border));
+}
+.lc-pb-share[data-state='fail'] {
+  color: var(--svc-red);
+  border-color: color-mix(in srgb, var(--svc-red) 55%, var(--border));
+}
+
+/* ── Presentation mode — hide chrome, keep map + step story ── */
+.lc-app[data-presentation='true'] .lc-topbar,
+.lc-app[data-presentation='true'] .lc-controls,
+.lc-app[data-presentation='true'] .lc-map-zoom,
+.lc-app[data-presentation='true'] .lc-layout-controls,
+.lc-app[data-presentation='true'] .lc-owner-legend,
+.lc-app[data-presentation='true'] .lc-activity {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 320ms var(--ease-std);
+}
+
 /* ── Domain bar = tabs + dropdown menu ─────────────────────── */
 .lc-domain-bar { position: relative; }
 .lc-domain-tab-caret {

@@ -9,6 +9,7 @@ import { ActivityLog } from './components/ActivityLog';
 import { IntroOverlay } from './components/IntroOverlay';
 import { WarpTransition } from './components/WarpTransition';
 import { HelpButton } from './components/HelpButton';
+import { DriftFooter } from './components/DriftFooter';
 import { Spotlight } from './components/Spotlight';
 import type { SpotlightTarget } from './components/Spotlight';
 import { BrandStarfield } from './map/BrandStarfield';
@@ -229,8 +230,34 @@ function CosmosShell(p: CosmosShellProps) {
     spotlightTarget, setSpotlightTarget,
   } = p;
 
+  // Presentation mode: hide the chrome and fatten the comets for talks.
+  const [presentation, setPresentation] = useState(false);
+
+  // Keyboard: P toggles presentation; arrows / space drive playback so the
+  // deck is navigable once the on-screen controls are hidden.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target && (e.target as HTMLElement).matches('input, textarea, [contenteditable="true"]')) return;
+      if (e.key === 'p' || e.key === 'P') { setPresentation((v) => !v); return; }
+      if (!state.scenarioId) return;
+      if (e.key === 'ArrowRight') { e.preventDefault(); navNext(); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); navPrev(); }
+      else if (e.key === ' ') {
+        e.preventDefault();
+        if (state.playing) runner.pause();
+        else navPlay();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [state.scenarioId, state.playing, navNext, navPrev, navPlay, runner]);
+
   return (
-    <div className="lc-app" data-revealing={revealing ? 'true' : 'false'}>
+    <div
+      className="lc-app"
+      data-revealing={revealing ? 'true' : 'false'}
+      data-presentation={presentation ? 'true' : 'false'}
+    >
       {/* Always-on sparkle starfield — sits behind everything. */}
       <div className="lc-app-bg" aria-hidden="true">
         <BrandStarfield density={0.1} speed={1.2} shootingEvery={60} />
@@ -270,6 +297,15 @@ function CosmosShell(p: CosmosShellProps) {
           </div>
 
           <div className="lc-topbar-side lc-topbar-side--right">
+            <DriftFooter />
+            <button
+              type="button"
+              className="lc-present-btn"
+              onClick={() => setPresentation(true)}
+              title="Presentation mode — hide chrome for talks (P)"
+            >
+              Present
+            </button>
             <HelpButton />
           </div>
         </div>
@@ -283,6 +319,7 @@ function CosmosShell(p: CosmosShellProps) {
           onShotComplete={handleShotComplete}
           isolate={isolate}
           revealing={revealing}
+          presentation={presentation}
           spotlightTarget={spotlightTarget}
           onSpotlightConsumed={() => setSpotlightTarget(null)}
         />
@@ -319,6 +356,17 @@ function CosmosShell(p: CosmosShellProps) {
         onSelectScenario={handlePickScenario}
         onSelectNode={setSpotlightTarget}
       />
+
+      {presentation && (
+        <button
+          type="button"
+          className="lc-present-hint"
+          onClick={() => setPresentation(false)}
+          title="Exit presentation mode"
+        >
+          Presenting · <kbd>P</kbd> to exit · <kbd>←</kbd> <kbd>→</kbd> steps
+        </button>
+      )}
     </div>
   );
 }

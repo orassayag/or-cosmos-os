@@ -23,6 +23,8 @@ import { TopicNode } from './TopicNode';
 import { CONNECTED_NODE_IDS, TOPIC_GROUPS, radialMemberPosition } from './topic-groups';
 import type { TopicGroup } from './topic-groups';
 import { ServicePanel } from './ServicePanel';
+import { OwnershipLegend, groupKey } from './OwnershipLegend';
+import { groupServicesByTeam } from '../scenarios/owners';
 import { TopicPanel } from './TopicPanel';
 import { SubServicePanel } from './SubServicePanel';
 import { CometPackets } from './CometPackets';
@@ -87,6 +89,8 @@ interface MapProps {
   isolate?: boolean;
   /** True for the first ~2.6s after the intro CTA — drives the ignite reveal. */
   revealing?: boolean;
+  /** Presentation mode — fattens the comets (chrome is hidden by App CSS). */
+  presentation?: boolean;
   /** Set by the spotlight to pan+select a node; cleared after consumption. */
   spotlightTarget?: { id: string; kind: 'service' | 'topic' } | null;
   onSpotlightConsumed?: () => void;
@@ -100,11 +104,22 @@ export function CosmosMap({
   onShotComplete,
   isolate = false,
   revealing = false,
+  presentation = false,
   spotlightTarget = null,
   onSpotlightConsumed,
 }: MapProps) {
   const [selection, setSelection] = useState<Selection>(null);
   const expandedServiceId: string | null = null;
+
+  // ── Ownership overlay mode ──────────────────────────────────
+  const [ownershipMode, setOwnershipMode] = useState(false);
+  const [ownerFilter, setOwnerFilter] = useState<string | null>(null);
+  const ownerGroups = useMemo(() => groupServicesByTeam(SERVICES), []);
+  const teamHighlightSet = useMemo<Set<string> | null>(() => {
+    if (!ownershipMode || !ownerFilter) return null;
+    const group = ownerGroups.find((g) => groupKey(g) === ownerFilter);
+    return group ? new Set(group.serviceIds) : null;
+  }, [ownershipMode, ownerFilter, ownerGroups]);
 
   // ── Layout edit mode ────────────────────────────────────────
   const [layoutMode, setLayoutMode] = useState(false);
@@ -388,16 +403,18 @@ export function CosmosMap({
     return ids;
   }, [selection, edges]);
 
-  // Priority: scenario > selection
+  // Priority: scenario > selection > ownership team filter
   const isNodeDim = (id: string) => {
     if (scenarioActiveSet) return !scenarioActiveSet.has(id);
     if (selectedTouches) return !selectedTouches.has(id);
+    if (teamHighlightSet) return !teamHighlightSet.has(id);
     return false;
   };
 
   const isEdgeDim = (e: EdgeRecord) => {
     if (scenarioActiveSet) return !(scenarioActiveSet.has(e.from) && scenarioActiveSet.has(e.to));
     if (selectedTouches) return !(selectedTouches.has(e.from) && selectedTouches.has(e.to));
+    if (teamHighlightSet) return !(teamHighlightSet.has(e.from) && teamHighlightSet.has(e.to));
     return false;
   };
 
@@ -433,15 +450,30 @@ export function CosmosMap({
     dragRef.current = null;
     localStorage.setItem('cosmos-layout', JSON.stringify(overridesRef.current));
   }
-  // Press L to toggle layout edit mode.
+  // Press L to toggle layout edit mode, O to toggle the ownership overlay.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target && (e.target as HTMLElement).matches('input, textarea, [contenteditable="true"]')) return;
       if (e.key === 'l' || e.key === 'L') setLayoutMode(prev => !prev);
+      if (e.key === 'o' || e.key === 'O') toggleOwnershipMode();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  function toggleOwnershipMode() {
+    const willOpen = !ownershipMode;
+    setOwnershipMode(willOpen);
+    setOwnerFilter(null);
+    // Ownership legend and the inspector share the top-left slot — opening
+    // one closes the other so they never stack.
+    if (willOpen) setSelection(null);
+  }
+
+  function exitOwnership() {
+    setOwnershipMode(false);
+    setOwnerFilter(null);
+  }
 
   function resetLayout() {
     setOverrides({});
@@ -609,12 +641,14 @@ export function CosmosMap({
                     topicCount={collapsedCountByService.get(s.id) ?? null}
                     onClick={(id) => {
                       if (layoutMode) return;
+                      exitOwnership();
                       setSelection((prev) =>
                         prev?.kind === 'service' && prev.id === id ? null : { kind: 'service', id },
                       );
                     }}
                     onSubServiceClick={(serviceId, subId) => {
                       if (layoutMode) return;
+                      exitOwnership();
                       setSelection((prev) =>
                         prev?.kind === 'sub-service' && prev.subId === subId
                           ? null
@@ -656,6 +690,7 @@ export function CosmosMap({
                       showLabel={!!meta || topicLabelVisible(t.x, t.y) || (scenarioNodeSet?.has(t.id) ?? false)}
                       onClick={(id) => {
                         if (layoutMode) return;
+                        exitOwnership();
                         setSelection((prev) =>
                           prev?.kind === 'topic' && prev.id === id ? null : { kind: 'topic', id },
                         );
@@ -672,6 +707,7 @@ export function CosmosMap({
               speed={speed}
               onShotComplete={(token) => onShotComplete?.(token)}
               expanded={expandedSet}
+              cometScale={presentation ? 1.7 : 1}
             />
 
             {/* Idle ambient traffic — only when no scenario is active.
@@ -706,11 +742,30 @@ export function CosmosMap({
               )}
             </>
           ) : (
-            <button type="button" className="lc-layout-btn" onClick={() => setLayoutMode(true)}>
-              Edit layout
-            </button>
+            <>
+              <button
+                type="button"
+                className={`lc-layout-btn${ownershipMode ? ' lc-layout-btn--done' : ''}`}
+                onClick={toggleOwnershipMode}
+                title="Toggle the ownership overlay (O)"
+                aria-pressed={ownershipMode}
+              >
+                Ownership
+              </button>
+              <button type="button" className="lc-layout-btn" onClick={() => setLayoutMode(true)}>
+                Edit layout
+              </button>
+            </>
           )}
         </div>}
+
+        {ownershipMode && !layoutMode && (
+          <OwnershipLegend
+            groups={ownerGroups}
+            activeKey={ownerFilter}
+            onToggle={(key) => setOwnerFilter((prev) => (prev === key ? null : key))}
+          />
+        )}
 
         {selection && (
           <div
