@@ -34,6 +34,7 @@ Every architecture diagram starts dying the moment it's born. The wiki page is f
 
 - 🗺️ **The map** — an animated SVG cosmos of your services (capsules), Kafka topics (orbitals), and protocol-colored connections (HTTP amber, WebSocket cyan, Kafka orange).
 - 🎬 **Scenario player** — named end-to-end flows play as comets along real curved paths, with a step panel showing the actual request/response payloads at every hop. Deep-linkable (`?domain=…&scenario=…&step=…`).
+- 🚨 **Incident replay** — pick a past production incident from the **Incidents** list and press play. The map replays the exact path the failing request (or cascade) took, with the real (redacted) payloads captured at the time, a red comet, and a banner so it never reads as live traffic. No AI — just human-curated recordings. Deep-linkable (`?incident=…&step=…`).
 - 🔍 **Service passports** — click any star: owner team, repo link, stack, databases, and why it exists.
 - 🪐 **Service ecosystems** — umbrella services expand into a mini solar system of sub-services; packets re-route through the internals during playback.
 - 🔦 **Blast radius** — click a service or topic and the map ranks everything that would break if you changed it, HIGH → MED → LOW. It walks the real dependency graph, which reverses direction for synchronous calls versus Kafka hand-offs, so the answer is genuine impact, not just "what's connected."
@@ -74,6 +75,7 @@ The entire universe lives in `src/scenarios/` — plain, typed TypeScript:
 | **Domain** | A group of related scenarios | `scenarios.ts` |
 | **Scenario** | A named, playable end-to-end flow | `scenarios.ts` |
 | **Step** | One hop: from → to, protocol, payload | `steps/*.ts` |
+| **Incident** | A past production incident, frozen in time and replayable | `src/incidents/*.ts` |
 
 **Start from the template:** click **Use this template** on GitHub (or clone), then:
 
@@ -108,6 +110,64 @@ The skills make Claude read your actual source — call sites, producers, consum
 Placing nodes is easiest visually: enter **Edit layout** mode, drag things into place, `Copy coords`, and paste the numbers back into `services.ts` / `topics.ts`. Topics normally auto-arrange in a ring around their owning service — if a ring slot collides with a neighbor, set `pinned: true` on the topic and it fans out to your hand-placed coordinates instead.
 
 To start clean, empty the arrays in `services.ts`, `topics.ts`, `scenarios.ts`, and `steps/`, then grow your own sky.
+
+## Record a production incident
+
+An incident is just a scenario frozen in time. Recordings live in `src/incidents/` (one file per incident); the app discovers, lists, and plays them automatically — no AI, no backend, no database. Recording one takes 10–30 minutes for someone who already has the logs:
+
+1. **Open the closest scenario** in `src/scenarios/steps/` (or start blank) and note the hops the failing request actually took.
+2. **Copy the relevant steps** and replace the example payloads with the real ones from the logs — redact card/customer/token fields (`"[redacted]"`).
+3. **Add the title, date, and a one- or two-sentence note** describing what went wrong.
+4. **Give it a globally-unique `phaseId`** (incidents use `101+` so they never collide with scenarios) and set every step's `phase` to that same id.
+5. **Save the file** under `src/incidents/`, import it in `src/incidents/data.ts`, and drop it into the `INCIDENTS` array. `npm run build` type-checks it.
+
+Every step's `from` / `to` / `via` / `through` must match an existing `SERVICES[].id` or `TOPICS[].id` — incidents reuse the same map you already drew.
+
+A complete, copyable example (trimmed):
+
+```ts
+// src/incidents/checkout-timeout-2026-08-01.ts
+import type { Incident } from './types';
+
+export const CHECKOUT_TIMEOUT_2026_08_01: Incident = {
+  incident: true,
+  id: 'checkout-timeout-2026-08-01',
+  domain: 'incidents',
+  phaseId: 104,                       // globally unique, never reused
+  status: 'ready',
+  label: 'Checkout timeout',
+  color: 'var(--svc-red)',
+  date: '2026-08-01',
+  time: '11:20 UTC',
+  note: 'Orders backed up when payments stopped responding — captures queued and checkout requests timed out.',
+  short: 'Payments stalls; checkout requests time out.',
+  refs: [{ label: 'Post-mortem ticket', url: 'https://tickets.example.dev/INC-2400' }],
+  steps: [
+    { phase: 104, from: 'orders', to: 'payments', type: 'http',
+      label: 'POST /v1/payments/capture', title: 'orders → payments: capture hangs',
+      plain: 'orders called payments synchronously; payments never answered.',
+      payload: `POST /v1/payments/capture
+
+{ "orderId": "ord_A1B2...", "paymentMethodToken": "[redacted]" }
+
+// no response for 30s — upstream timeout` },
+    // …more hops…
+  ],
+};
+```
+
+Then register it:
+
+```ts
+// src/incidents/data.ts
+import { CHECKOUT_TIMEOUT_2026_08_01 } from './checkout-timeout-2026-08-01';
+export const INCIDENTS: Incident[] = [
+  CHECKOUT_TIMEOUT_2026_08_01,
+  // …existing incidents…
+].sort((a, b) => b.date.localeCompare(a.date));
+```
+
+The three incidents that ship with AstroMart (`src/incidents/*.ts`) are working references — copy whichever is closest to your first real recording.
 
 ## Drift Sync
 

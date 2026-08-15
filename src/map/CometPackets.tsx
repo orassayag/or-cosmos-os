@@ -26,6 +26,9 @@ interface CometPacketsProps {
   expanded?: Set<string> | null;
   /** Multiplier on comet radii — presentation mode fattens the packets. */
   cometScale?: number;
+  /** Overrides the per-protocol comet colour when set (e.g. incident replays
+   *  fly a warning-red comet instead of the wire colour). */
+  tint?: string | null;
 }
 
 interface FlightHandles {
@@ -53,7 +56,7 @@ const PROTO_DURATION: Record<Protocol, number> = {
  * front of nodes. Receives one shot at a time and animates it on
  * the rendered edge paths via GSAP MotionPathPlugin.
  */
-export function CometPackets({ shot, speed, onShotComplete, expanded, cometScale = 1 }: CometPacketsProps) {
+export function CometPackets({ shot, speed, onShotComplete, expanded, cometScale = 1, tint = null }: CometPacketsProps) {
   const registry = useEdgeRegistry();
   const layerRef = useRef<SVGGElement>(null);
   const flightsRef = useRef<FlightHandles[]>([]);
@@ -87,7 +90,7 @@ export function CometPackets({ shot, speed, onShotComplete, expanded, cometScale
       // for each step starts at t=0 of the timeline (parallel steps fire together).
       let cursor = 0;
       for (const leg of legs) {
-        const handles = createFlight(layerRef.current, leg, cometScale);
+        const handles = createFlight(layerRef.current, leg, cometScale, tint);
         if (!handles) continue;
         flightsRef.current.push(handles);
 
@@ -171,9 +174,9 @@ export function CometPackets({ shot, speed, onShotComplete, expanded, cometScale
   return <g ref={layerRef} />;
 }
 
-function createFlight(parent: SVGGElement, leg: EdgeLeg, scale: number): FlightHandles | null {
+function createFlight(parent: SVGGElement, leg: EdgeLeg, scale: number, tint: string | null): FlightHandles | null {
   const ns = 'http://www.w3.org/2000/svg';
-  const color = PROTO_COLOR[leg.proto];
+  const color = tint ?? PROTO_COLOR[leg.proto];
 
   const group = document.createElementNS(ns, 'g');
   group.setAttribute('pointer-events', 'none');

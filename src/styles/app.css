@@ -1584,6 +1584,99 @@ body:has(.lc-map-stage[data-panning='true']) * {
   color: var(--text-3);
 }
 
+/* ── Incidents (list trigger + replay banner) ─────────────────── */
+.lc-incident-bar { position: relative; }
+.lc-incident-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.lc-incident-trigger-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #ff5a52;
+  box-shadow: 0 0 8px 1px color-mix(in srgb, #ff5a52 70%, transparent);
+}
+.lc-incident-trigger[data-active='true'],
+.lc-incident-trigger[data-open='true'] {
+  color: var(--text-1);
+  border-color: color-mix(in srgb, #ff5a52 55%, var(--border));
+}
+.lc-incident-item-badge {
+  color: #ff8a84;
+  border-color: color-mix(in srgb, #ff5a52 45%, var(--border));
+}
+
+.lc-incident-banner {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: min(760px, calc(100% - 48px));
+  padding: 10px 16px;
+  border: 1px solid color-mix(in srgb, #ff5a52 45%, var(--border));
+  border-radius: var(--radius-pill);
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, #ff5a52 14%, var(--bg-elevated)) 0%,
+      color-mix(in srgb, #ff5a52 6%, var(--bg-elevated)) 100%);
+  box-shadow:
+    inset 0 1px 0 0 color-mix(in srgb, white 6%, transparent),
+    0 12px 40px -14px rgba(0, 0, 0, 0.8),
+    0 0 30px -6px color-mix(in srgb, #ff5a52 55%, transparent);
+  color: var(--text-1);
+  pointer-events: auto;
+}
+.lc-incident-banner-badge {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  background: #ff5a52;
+  color: #180404;
+}
+.lc-incident-banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.lc-incident-banner-lead {
+  font-family: var(--font-display);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+.lc-incident-banner-note {
+  font-family: var(--font-display);
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--text-2);
+}
+.lc-incident-banner-refs {
+  flex: none;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.lc-incident-banner-ref {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: color-mix(in srgb, #ff8a84 80%, var(--text-2));
+  text-decoration: none;
+  white-space: nowrap;
+  border-bottom: 1px dotted color-mix(in srgb, #ff8a84 50%, transparent);
+}
+.lc-incident-banner-ref:hover { color: #ffb0ab; }
+
 /* ── Stage = map + floating overlays (step panel, activity log, strip) ─ */
 .lc-stage {
   position: relative;

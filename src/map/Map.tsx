@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
-  SCENARIOS_BY_ID,
+  PLAYABLE_BY_ID,
   SERVICES,
   SERVICES_BY_ID,
   STEPS,
   TOPICS,
   TOPICS_BY_ID,
   stepsForScenario,
+  INCIDENT_COMET_HEX,
 } from '../scenarios/data';
 import type { Protocol, Service, Step, Topic } from '../scenarios/types';
 import type { Shot } from '../scenarios/runner';
@@ -109,6 +110,9 @@ interface MapProps {
   /** A random node the Ask panel "focuses" on — dims the map to its cluster
    *  while the panel is open, so the answer reads as being about it. */
   askFocusId?: string | null;
+  /** True when the active playable is a recorded incident — tints the comet
+   *  the incident colour so a historical replay never reads as live traffic. */
+  incidentActive?: boolean;
 }
 
 
@@ -124,6 +128,7 @@ export function CosmosMap({
   onSpotlightConsumed,
   resetNonce = 0,
   askFocusId = null,
+  incidentActive = false,
 }: MapProps) {
   const overlay = useOverlay();
   const [selection, setSelection] = useState<Selection>(null);
@@ -228,7 +233,7 @@ export function CosmosMap({
   // a scenario is active; show all when none is.
   const hubDestinations = useMemo<Set<string> | null>(() => {
     if (!activeScenarioId) return null;
-    const scenario = SCENARIOS_BY_ID[activeScenarioId];
+    const scenario = PLAYABLE_BY_ID[activeScenarioId];
     if (!scenario || scenario.status !== 'ready') return null;
     const dests = new Set<string>();
     for (const step of stepsForScenario(scenario)) {
@@ -865,6 +870,7 @@ export function CosmosMap({
               onShotComplete={(token) => onShotComplete?.(token)}
               expanded={expandedSet}
               cometScale={presentation ? 1.7 : 1}
+              tint={incidentActive ? INCIDENT_COMET_HEX : null}
             />
 
             {/* Idle ambient traffic — only when no scenario is active.

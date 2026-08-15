@@ -12,6 +12,8 @@ import { HelpButton } from './components/HelpButton';
 import { DriftFooter } from './components/DriftFooter';
 import { AskAgent } from './components/AskAgent';
 import { AskPanel } from './components/AskPanel';
+import { IncidentBar } from './components/IncidentBar';
+import { IncidentBanner } from './components/IncidentBanner';
 import { ChangelogPanel } from './components/ChangelogPanel';
 import type { ChangelogActivation, CosmosState } from './components/ChangelogPanel';
 import { Spotlight } from './components/Spotlight';
@@ -19,7 +21,8 @@ import type { SpotlightTarget } from './components/Spotlight';
 import { BrandStarfield } from './map/BrandStarfield';
 import { OverlayProvider, useOverlay, useOverlayManager, OVERLAY } from './overlays/OverlayManager';
 
-import { DOMAINS, SCENARIOS_BY_ID, SERVICES } from './scenarios/data';
+import { DOMAINS, SCENARIOS_BY_ID, INCIDENTS_BY_ID, SERVICES } from './scenarios/data';
+import type { Incident } from './scenarios/data';
 import type { Step } from './scenarios/types';
 import { useScenarioRunner } from './scenarios/runner';
 import type { Shot } from './scenarios/runner';
@@ -31,7 +34,8 @@ interface ActivityEntry { idx: number; step: Step }
 export function App() {
   const initial = useMemo(readInitialDeepLink, []);
   const [showIntro, setShowIntro] = useState(
-    () => initial.scenario == null && initial.domain == null && !localStorage.getItem('cosmos-intro-seen'),
+    () => initial.scenario == null && initial.incident == null && initial.domain == null
+      && !localStorage.getItem('cosmos-intro-seen'),
   );
   // Plays the hyperspace warp between the intro CTA and the cosmos shell.
   const [warping, setWarping] = useState(false);
@@ -40,10 +44,15 @@ export function App() {
   const runner = useScenarioRunner();
   const { state, steps, scenario, setScenario, jumpTo, completeCurrentShot, onShot } = runner;
 
-  // Hydrate from deep link on first paint.
+  // Hydrate from deep link on first paint. An incident id wins over a
+  // scenario id — both resolve into the same runner slot.
   useEffect(() => {
-    if (initial.scenario && SCENARIOS_BY_ID[initial.scenario]) {
-      setScenario(initial.scenario);
+    const deepLinkId =
+      (initial.incident && INCIDENTS_BY_ID[initial.incident] && initial.incident) ||
+      (initial.scenario && SCENARIOS_BY_ID[initial.scenario] && initial.scenario) ||
+      null;
+    if (deepLinkId) {
+      setScenario(deepLinkId);
       if (initial.step != null) {
         // Defer so steps array is populated.
         queueMicrotask(() => jumpTo(initial.step!));
@@ -52,10 +61,15 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Push UI state into the URL.
+  // The active playable resolved as an incident (null for scenarios / idle).
+  const activeIncident: Incident | null =
+    state.scenarioId != null ? INCIDENTS_BY_ID[state.scenarioId] ?? null : null;
+
+  // Push UI state into the URL — incidents use `?incident=`, scenarios `?scenario=`.
   useDeepLink({
     domain: activeDomain,
-    scenario: state.scenarioId,
+    scenario: activeIncident ? null : state.scenarioId,
+    incident: activeIncident ? activeIncident.id : null,
     step: state.idx >= 0 ? state.idx : null,
   });
 
@@ -246,6 +260,7 @@ export function App() {
         onResetGalaxy={handleResetGalaxy}
         cosmosState={cosmosState}
         resetNonce={resetNonce}
+        activeIncident={activeIncident}
       />
     </OverlayProvider>
   );
@@ -279,6 +294,7 @@ interface CosmosShellProps {
   onResetGalaxy: () => void;
   cosmosState: CosmosState | null;
   resetNonce: number;
+  activeIncident: Incident | null;
 }
 
 function CosmosShell(p: CosmosShellProps) {
@@ -295,6 +311,7 @@ function CosmosShell(p: CosmosShellProps) {
     handleShotComplete, isolate, setHistory, navPlay, navPrev, navNext, navJump, navRestart,
     spotlightTarget, setSpotlightTarget,
     warping, onWarpDone, onActivateChangelogItem, onResetGalaxy, cosmosState, resetNonce,
+    activeIncident,
   } = p;
 
   // Presentation mode: hide the chrome and fatten the comets for talks.
@@ -400,6 +417,10 @@ function CosmosShell(p: CosmosShellProps) {
               onPickDomain={handlePickDomain}
               onPickScenario={handlePickScenario}
             />
+            <IncidentBar
+              activeScenarioId={state.scenarioId}
+              onPickIncident={handlePickScenario}
+            />
           </div>
 
           <div className="lc-topbar-center">
@@ -443,7 +464,10 @@ function CosmosShell(p: CosmosShellProps) {
           onSpotlightConsumed={() => setSpotlightTarget(null)}
           resetNonce={resetNonce}
           askFocusId={askAnswering ? askFocusId : null}
+          incidentActive={!!activeIncident}
         />
+
+        <IncidentBanner incident={activeIncident} />
 
         <StepPanel
           scenario={scenario}

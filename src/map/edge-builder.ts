@@ -1,4 +1,4 @@
-import { SERVICES_BY_ID, TOPICS_BY_ID, STEPS, SCENARIOS_BY_ID, stepsForScenario } from '../scenarios/data';
+import { SERVICES_BY_ID, TOPICS_BY_ID, ALL_STEPS, PLAYABLE_BY_ID, stepsForScenario } from '../scenarios/data';
 import type { Protocol, Step } from '../scenarios/types';
 import type { Shot } from '../scenarios/runner';
 
@@ -159,7 +159,7 @@ export function deriveEdges(ov: PosOverrides = {}): EdgeRecord[] {
     if (!d) return;
     map.set(key, { key, d, type, from, to });
   };
-  for (const step of STEPS) {
+  for (const step of ALL_STEPS) {
     if (step.via && step.through) {
       addEdge(step.from, step.via, 'kafka');
       addEdge(step.via, step.through, 'kafka');
@@ -176,7 +176,7 @@ export function deriveEdges(ov: PosOverrides = {}): EdgeRecord[] {
 
 export function activeNodeSet(scenarioId: string | null | undefined): Set<string> | null {
   if (!scenarioId) return null;
-  const scenario = SCENARIOS_BY_ID[scenarioId];
+  const scenario = PLAYABLE_BY_ID[scenarioId];
   if (!scenario || scenario.status !== 'ready') return null;
   const set = new Set<string>();
   for (const step of stepsForScenario(scenario)) {
