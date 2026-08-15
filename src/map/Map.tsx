@@ -45,6 +45,7 @@ import { ShoppingCluster } from './ShoppingCluster';
 import { FulfillmentCluster } from './FulfillmentCluster';
 import { EngagementCluster } from './EngagementCluster';
 import { EdgeRegistryContext, createEdgeRegistry } from './edge-registry';
+import { publishParallaxPan } from './parallaxPan';
 import { useOverlay, OVERLAY } from '../overlays/OverlayManager';
 
 const WORLD_MIN_Y = -200;
@@ -310,6 +311,12 @@ export function CosmosMap({
     worldMinY: WORLD_MIN_Y,
     homeBBox: HOME_BBOX,
   });
+
+  // Feed the current world-pan to the background starfield so its stars
+  // parallax by depth as the user pans/zooms the map (see parallaxPan.ts).
+  useEffect(() => {
+    publishParallaxPan(view.tx, view.ty);
+  }, [view.tx, view.ty]);
 
   // When the scenario changes (and isn't cleared), reframe the map so
   // every node it touches fits inside the visible area — leaving room
