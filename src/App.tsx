@@ -14,15 +14,15 @@ import { AskAgent } from './components/AskAgent';
 import { AskPanel } from './components/AskPanel';
 import { IncidentBar } from './components/IncidentBar';
 import { IncidentBanner } from './components/IncidentBanner';
-import { ChangelogPanel } from './components/ChangelogPanel';
+import { ChangelogPanel, cosmosStateFor } from './components/ChangelogPanel';
 import type { ChangelogActivation, CosmosState } from './components/ChangelogPanel';
 import { Spotlight } from './components/Spotlight';
 import type { SpotlightTarget } from './components/Spotlight';
 import { BrandStarfield } from './map/BrandStarfield';
 import { OverlayProvider, useOverlay, useOverlayManager, OVERLAY } from './overlays/OverlayManager';
 
-import { DOMAINS, SCENARIOS_BY_ID, INCIDENTS_BY_ID, SERVICES } from './scenarios/data';
-import type { Incident } from './scenarios/data';
+import { DOMAINS, SCENARIOS_BY_ID, INCIDENTS_BY_ID, SERVICES, driftRunDateTime } from './scenarios/data';
+import type { Incident, DriftEntry } from './scenarios/data';
 import type { Step } from './scenarios/types';
 import { useScenarioRunner } from './scenarios/runner';
 import type { Shot } from './scenarios/runner';
@@ -89,6 +89,9 @@ export function App() {
   // The commit/branch the map is currently framed on (set after a warp), shown
   // beside the title so you always know which state you're looking at.
   const [cosmosState, setCosmosState] = useState<CosmosState | null>(null);
+  // The run date currently in view — the shared cursor the Changelog and the
+  // Changes panel both write, so a pick in one filters and stamps the other.
+  const [driftDate, setDriftDate] = useState<string | null>(null);
   // Bumped by the "Cosmos" title to force the map back to its initial state.
   const [resetNonce, setResetNonce] = useState(0);
 
@@ -171,9 +174,17 @@ export function App() {
     if (warp) {
       setSpotlightTarget(warp.target);
       setCosmosState(warp.state);
+      setDriftDate(warp.date);
     }
     setWarp(null);
   }, [warp]);
+
+  // A Changes side-panel entry was clicked: stamp its commit + run date as the
+  // "current time" — the same cursor a changelog pick sets, so the two agree.
+  const handleSelectDrift = useCallback((entry: DriftEntry) => {
+    setCosmosState(cosmosStateFor(entry));
+    setDriftDate(entry.date);
+  }, []);
 
   // The "Cosmos" title resets the galaxy to its initial state: no scenario,
   // home domain, cleared history/URL params, every overlay closed, map reframed.
@@ -186,6 +197,7 @@ export function App() {
     setSpotlightTarget(null);
     setWarp(null);
     setCosmosState(null);
+    setDriftDate(null);
     overlay.reset();
     setResetNonce((n) => n + 1);
   }, [setScenario, overlay]);
@@ -259,6 +271,8 @@ export function App() {
         onActivateChangelogItem={handleActivateChangelogItem}
         onResetGalaxy={handleResetGalaxy}
         cosmosState={cosmosState}
+        driftDate={driftDate}
+        onSelectDrift={handleSelectDrift}
         resetNonce={resetNonce}
         activeIncident={activeIncident}
       />
@@ -293,6 +307,8 @@ interface CosmosShellProps {
   onActivateChangelogItem: (activation: ChangelogActivation) => void;
   onResetGalaxy: () => void;
   cosmosState: CosmosState | null;
+  driftDate: string | null;
+  onSelectDrift: (entry: DriftEntry) => void;
   resetNonce: number;
   activeIncident: Incident | null;
 }
@@ -311,6 +327,7 @@ function CosmosShell(p: CosmosShellProps) {
     handleShotComplete, isolate, setHistory, navPlay, navPrev, navNext, navJump, navRestart,
     spotlightTarget, setSpotlightTarget,
     warping, onWarpDone, onActivateChangelogItem, onResetGalaxy, cosmosState, resetNonce,
+    driftDate, onSelectDrift,
     activeIncident,
   } = p;
 
@@ -397,18 +414,38 @@ function CosmosShell(p: CosmosShellProps) {
                 {BRAND.badge}
               </span>
             </button>
-            {cosmosState && (
+            {(cosmosState || driftDate) && (
               <span
                 className="lc-cosmos-state"
-                title={`Viewing ${cosmosState.title} — ${cosmosState.repo}@${cosmosState.sha} on ${cosmosState.branch}`}
+                title={
+                  cosmosState
+                    ? `Viewing ${cosmosState.title} — ${cosmosState.repo}@${cosmosState.sha} on ${cosmosState.branch}`
+                    : 'Current point in the drift history'
+                }
               >
-                <svg className="lc-cosmos-state-icon" width={12} height={12} viewBox="0 0 12 12" aria-hidden="true">
-                  <path d="M3 1.5 v9 M3 4 a2.5 2.5 0 0 0 2.5 2.5 h1.5 M9 1.5 a1.5 1.5 0 1 1 0 3 a1.5 1.5 0 0 1 0 -3 Z M3 1.5 a1.5 1.5 0 1 1 0 0.01 Z M3 10.5 a1.5 1.5 0 1 1 0 0.01 Z"
-                    fill="none" stroke="currentColor" strokeWidth={1} strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                <span className="lc-cosmos-state-branch">{cosmosState.branch}</span>
-                <span className="lc-cosmos-state-sep">·</span>
-                <span className="lc-cosmos-state-sha">{cosmosState.repo}@{cosmosState.sha}</span>
+                {driftDate && (
+                  <span className="lc-cosmos-state-time">
+                    <svg className="lc-cosmos-state-clock" width={11} height={11} viewBox="0 0 12 12" aria-hidden="true">
+                      <circle cx={6} cy={6} r={4.6} fill="none" stroke="currentColor" strokeWidth={1} />
+                      <path d="M6 3.4 V6 L7.8 7.2" fill="none" stroke="currentColor" strokeWidth={1} strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    {driftRunDateTime(driftDate)}
+                  </span>
+                )}
+                {cosmosState && (
+                  <span className="lc-cosmos-state-commit">
+                    <svg className="lc-cosmos-state-icon" width={12} height={12} viewBox="0 0 12 12" aria-hidden="true">
+                      <path d="M3 1.5 v9 M3 4 a2.5 2.5 0 0 0 2.5 2.5 h1.5 M9 1.5 a1.5 1.5 0 1 1 0 3 a1.5 1.5 0 0 1 0 -3 Z M3 1.5 a1.5 1.5 0 1 1 0 0.01 Z M3 10.5 a1.5 1.5 0 1 1 0 0.01 Z"
+                        fill="none" stroke="currentColor" strokeWidth={1} strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    <span className="lc-cosmos-state-branch">{cosmosState.branch}</span>
+                    <span className="lc-cosmos-state-sep">·</span>
+                    <span className="lc-cosmos-state-sha">{cosmosState.repo}@{cosmosState.sha}</span>
+                    {cosmosState.owner && (
+                      <span className="lc-cosmos-state-owner">@{cosmosState.owner}</span>
+                    )}
+                  </span>
+                )}
               </span>
             )}
             <DomainBar
@@ -466,6 +503,8 @@ function CosmosShell(p: CosmosShellProps) {
           askFocusId={askAnswering ? askFocusId : null}
           incidentActive={!!activeIncident}
           activeDomain={activeDomain}
+          driftCursorDate={driftDate}
+          onDriftSelect={onSelectDrift}
         />
 
         <IncidentBanner incident={activeIncident} />

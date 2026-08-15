@@ -55,6 +55,20 @@ export function driftBranch(entry: DriftEntry): string {
   return entry.source?.branch ?? 'main';
 }
 
+/** The nightly Drift Sync cron fires at 04:17 UTC — every run is stamped with it. */
+export const DRIFT_RUN_TIME_UTC = '04:17';
+
+/** "Aug 13, 2026 · 04:17 UTC" — a run's date paired with the nightly cron time. */
+export function driftRunDateTime(date: string): string {
+  const day = new Date(`${date}T00:00:00Z`).toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  });
+  return `${day} · ${DRIFT_RUN_TIME_UTC} UTC`;
+}
+
 /** The PR display name for an entry — its PR title, else the change title. */
 export function driftPrName(entry: DriftEntry): string {
   return entry.prTitle ?? entry.title;

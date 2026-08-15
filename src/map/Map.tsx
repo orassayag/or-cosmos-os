@@ -29,7 +29,8 @@ import { groupServicesByTeam } from '../scenarios/owners';
 import { TopicPanel } from './TopicPanel';
 import { SubServicePanel } from './SubServicePanel';
 import { DriftOverlay } from './DriftOverlay';
-import { LATEST_DRIFT_BY_NODE, LATEST_DRIFT_DATE, LATEST_DRIFT_ENTRIES } from '../scenarios/drift';
+import { LATEST_DRIFT_BY_NODE, LATEST_DRIFT_DATE, LATEST_DRIFT_ENTRIES, driftEntriesByRun } from '../scenarios/drift';
+import type { DriftEntry } from '../scenarios/drift';
 import type { DriftKind } from '../scenarios/drift';
 import { BlastLegend } from './BlastLegend';
 import { computeBlastRadius, BLAST_LEVEL_META } from './blast-radius';
@@ -125,6 +126,11 @@ interface MapProps {
   /** Active domain id. A change fires a brief warp-jump flourish on the map —
    *  the stars stretch and snap, as if jumping to a different star system. */
   activeDomain?: string | null;
+  /** The selected run date. The Changes panel hides runs newer than this, so a
+   *  changelog pick and the panel stay on the same point in history. */
+  driftCursorDate?: string | null;
+  /** A Changes-panel entry was clicked — stamp it as the "current time". */
+  onDriftSelect?: (entry: DriftEntry) => void;
 }
 
 
@@ -142,6 +148,8 @@ export function CosmosMap({
   askFocusId = null,
   incidentActive = false,
   activeDomain = null,
+  driftCursorDate = null,
+  onDriftSelect,
 }: MapProps) {
   const overlay = useOverlay();
   const [selection, setSelection] = useState<Selection>(null);
@@ -177,6 +185,12 @@ export function CosmosMap({
     () => (driftMode && hasDrift ? LATEST_DRIFT_BY_NODE : null),
     [driftMode, hasDrift],
   );
+  // The Changes panel pages through every run, but never one newer than the
+  // selected cursor — so a changelog pick (or a panel pick) hides the future.
+  const driftRuns = useMemo(() => {
+    const all = driftEntriesByRun();
+    return driftCursorDate ? all.filter((run) => run.date <= driftCursorDate) : all;
+  }, [driftCursorDate]);
 
   // ── Ownership overlay mode ──────────────────────────────────
   const [ownerFilter, setOwnerFilter] = useState<string | null>(null);
@@ -1099,9 +1113,12 @@ export function CosmosMap({
 
         {driftMode && !layoutMode && hasDrift && LATEST_DRIFT_DATE && (
           <DriftOverlay
-            entries={LATEST_DRIFT_ENTRIES}
-            date={LATEST_DRIFT_DATE}
-            onFocus={(nodeId) => focusNode(nodeId, TOPICS_BY_ID[nodeId] ? 'topic' : 'service')}
+            runs={driftRuns}
+            onSelect={(entry) => {
+              const nodeId = entry.nodeIds[0];
+              focusNode(nodeId, TOPICS_BY_ID[nodeId] ? 'topic' : 'service');
+              onDriftSelect?.(entry);
+            }}
           />
         )}
 

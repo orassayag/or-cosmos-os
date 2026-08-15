@@ -17,6 +17,7 @@ export {
   driftBranch,
   driftPrName,
   driftEntryMatches,
+  driftRunDateTime,
 } from './drift';
 export type { DriftEntry, DriftKind } from './drift';
 

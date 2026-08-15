@@ -416,6 +416,56 @@ body:has(.lc-map-stage[data-panning='true']) * {
   color: var(--text-1);
   border-color: var(--border-strong);
 }
+.lc-drift-overlay-scroll {
+  margin-top: 10px;
+  /* ~5 findings tall; anything more scrolls until the next page loads. */
+  max-height: 230px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.lc-drift-overlay-run + .lc-drift-overlay-run { margin-top: 8px; }
+.lc-drift-overlay-run-date {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  opacity: 0.85;
+  padding: 0 2px 4px;
+}
+.lc-drift-overlay-loadmore {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 7px 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std), border-color var(--dur-fast) var(--ease-std);
+}
+.lc-drift-overlay-loadmore:hover:not(:disabled) {
+  color: var(--text-1);
+  border-color: var(--border-strong);
+  background: var(--bg-surface-2);
+}
+.lc-drift-overlay-loadmore:disabled { cursor: default; opacity: 0.75; }
+.lc-drift-overlay-spinner {
+  width: 11px; height: 11px;
+  border: 1.5px solid var(--border-strong);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: lc-spin 0.6s linear infinite;
+}
 
 /* ── Blast-radius overlay legend (F14) ─────────────────────── */
 .lc-blast-legend {
@@ -2820,12 +2870,13 @@ body:has(.lc-map-stage[data-panning='true']) * {
 /* Commit/branch the map is framed on, shown after warping to a changelog item. */
 .lc-cosmos-state {
   display: inline-flex;
-  align-items: center;
-  gap: 5px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
   margin-left: 10px;
-  padding: 3px 9px;
+  padding: 4px 10px;
   border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   font-family: var(--font-mono);
   font-size: 10px;
@@ -2837,10 +2888,26 @@ body:has(.lc-map-stage[data-panning='true']) * {
   from { opacity: 0; transform: translateY(-2px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+.lc-cosmos-state-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9.5px;
+  letter-spacing: 0.03em;
+  color: color-mix(in srgb, var(--accent) 55%, var(--text-1));
+  font-weight: 500;
+}
+.lc-cosmos-state-clock { color: color-mix(in srgb, var(--accent) 90%, var(--text-1)); flex-shrink: 0; }
+.lc-cosmos-state-commit {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
 .lc-cosmos-state-icon { color: color-mix(in srgb, var(--accent) 90%, var(--text-1)); flex-shrink: 0; }
 .lc-cosmos-state-branch { color: var(--text-1); font-weight: 500; }
 .lc-cosmos-state-sep { color: var(--text-3); }
 .lc-cosmos-state-sha { color: var(--text-2); }
+.lc-cosmos-state-owner { color: var(--text-3); }
 
 /* Domain tabs — rounder, glowing active. */
 .lc-domain-tabs {

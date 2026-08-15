@@ -19,12 +19,18 @@ export interface CosmosState {
   sha: string;
   branch: string;
   title: string;
+  /** ISO date of the run this change belongs to — the "current time" cursor. */
+  date: string;
+  /** PR author, when the change carries one. */
+  owner?: string;
 }
 
 /** Payload emitted when a whole changelog item is clicked. */
 export interface ChangelogActivation {
   target: SpotlightTarget;
   state: CosmosState | null;
+  /** The selected entry's run date — the cursor even when `state` is null. */
+  date: string;
 }
 
 interface ChangelogPanelProps {
@@ -62,9 +68,16 @@ function primaryTarget(nodeIds: string[]): SpotlightTarget | null {
 }
 
 /** The commit context an entry warps into, when it has a source commit. */
-function cosmosStateFor(entry: DriftEntry): CosmosState | null {
+export function cosmosStateFor(entry: DriftEntry): CosmosState | null {
   if (!entry.source) return null;
-  return { repo: entry.source.repo, sha: entry.source.sha, branch: driftBranch(entry), title: entry.title };
+  return {
+    repo: entry.source.repo,
+    sha: entry.source.sha,
+    branch: driftBranch(entry),
+    title: entry.title,
+    date: entry.date,
+    owner: entry.prOwner,
+  };
 }
 
 interface DatedEntry { date: string; entry: DriftEntry }
@@ -197,7 +210,7 @@ export function ChangelogPanel({ open, onClose, onSelectNode, onActivateItem }: 
                   const commitUrl = driftCommitUrl(entry);
                   const target = primaryTarget(entry.nodeIds);
                   const activate = () => {
-                    if (target) onActivateItem({ target, state: cosmosStateFor(entry) });
+                    if (target) onActivateItem({ target, state: cosmosStateFor(entry), date: entry.date });
                   };
                   return (
                     <li
