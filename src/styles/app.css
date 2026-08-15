@@ -3091,6 +3091,13 @@ body:has(.lc-map-stage[data-panning='true']) * {
   opacity: 0.08;
   filter: blur(1.6px) saturate(0.35);
 }
+/* Gravity well — the wrapper that carries a node's drift toward a hovered
+   star. The eased transition makes both the pull-in and the release read as a
+   gentle glide rather than a snap. */
+.lc-gravity-node {
+  transition: transform 720ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
 /* Topic group fan-out — expanded members pop from the hub onto their ring
    position, staggered like a radial speed-dial menu opening. */
 .lc-group-pop {

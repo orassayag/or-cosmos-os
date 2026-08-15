@@ -50,6 +50,13 @@ const WORLD_MIN_Y = -200;
 const WORLD_W = 4000;
 const WORLD_H = 2300;
 
+// Gravity well: hovering a service capsule gently pulls nearby light nodes
+// toward it. Topics are light and drift most; other services are heavy and
+// barely budge. Purely a visual offset on the node — edges stay put.
+const GRAVITY_RADIUS = 340;      // world-unit reach of a hovered star's pull
+const GRAVITY_TOPIC_PULL = 16;   // max drift for a topic at closest range
+const GRAVITY_SERVICE_PULL = 8;  // heavier services move about half as far
+
 // Bbox of every service capsule, padded to cover topic fan-out rings and
 // cluster halos. Defines the home view: initial frame, reset target, and
 // the wheel-zoom-out floor.
@@ -133,6 +140,9 @@ export function CosmosMap({
   const overlay = useOverlay();
   const [selection, setSelection] = useState<Selection>(null);
   const expandedServiceId: string | null = null;
+
+  // Service currently under the cursor — the gravity well's source star.
+  const [gravitySourceId, setGravitySourceId] = useState<string | null>(null);
 
   // Ambient-traffic density multiplier — driven by the +/- panel. 1 = default;
   // higher spawns more concurrent packets, same flight speed.
@@ -563,6 +573,47 @@ export function CosmosMap({
     [mergedOverrides],
   );
 
+  // The gravity well is meaningless while a scenario is playing (nodes are
+  // isolated and comets ride the edges) or while dragging nodes in layout mode.
+  const gravityEnabled = !layoutMode && !isolate;
+  useEffect(() => {
+    if (!gravityEnabled) setGravitySourceId(null);
+  }, [gravityEnabled]);
+
+  // Per-node drift toward the hovered star: a unit vector scaled by a
+  // quadratic falloff over GRAVITY_RADIUS, so distant nodes barely move and
+  // the pull eases in as they get closer.
+  const gravityOffsets = useMemo(() => {
+    const out = new Map<string, { dx: number; dy: number }>();
+    if (!gravitySourceId) return out;
+    const source = displayServices.find((s) => s.id === gravitySourceId);
+    if (!source) return out;
+    const driftToward = (x: number, y: number, maxPull: number) => {
+      const toSourceX = source.x - x;
+      const toSourceY = source.y - y;
+      const distance = Math.hypot(toSourceX, toSourceY);
+      if (distance < 1 || distance > GRAVITY_RADIUS) return null;
+      const proximity = 1 - distance / GRAVITY_RADIUS;
+      const strength = proximity * proximity * maxPull;
+      return { dx: (toSourceX / distance) * strength, dy: (toSourceY / distance) * strength };
+    };
+    for (const t of displayTopics) {
+      const drift = driftToward(t.x, t.y, GRAVITY_TOPIC_PULL);
+      if (drift) out.set(t.id, drift);
+    }
+    for (const s of displayServices) {
+      if (s.id === gravitySourceId) continue;
+      const drift = driftToward(s.x, s.y, GRAVITY_SERVICE_PULL);
+      if (drift) out.set(s.id, drift);
+    }
+    return out;
+  }, [gravitySourceId, displayServices, displayTopics]);
+
+  const gravityStyle = (id: string): React.CSSProperties => {
+    const o = gravityOffsets.get(id);
+    return { transform: `translate(${o?.dx ?? 0}px, ${o?.dy ?? 0}px)` };
+  };
+
   // Layout mode helpers.
   function handleDragStart(id: string, e: React.PointerEvent) {
     e.stopPropagation();
@@ -777,9 +828,19 @@ export function CosmosMap({
               {displayServices.map((s) => (
                 <g
                   key={s.id}
-                  onPointerDown={layoutMode ? (e) => handleDragStart(s.id, e) : undefined}
-                  style={layoutMode ? { cursor: 'grab' } : undefined}
+                  className="lc-gravity-node"
+                  style={gravityStyle(s.id)}
+                  onPointerEnter={gravityEnabled ? () => setGravitySourceId(s.id) : undefined}
+                  onPointerLeave={
+                    gravityEnabled
+                      ? () => setGravitySourceId((prev) => (prev === s.id ? null : prev))
+                      : undefined
+                  }
                 >
+                  <g
+                    onPointerDown={layoutMode ? (e) => handleDragStart(s.id, e) : undefined}
+                    style={layoutMode ? { cursor: 'grab' } : undefined}
+                  >
                   <ServiceNode
                     service={s}
                     selected={(selection?.kind === 'service' && selection.id === s.id) || blastSourceId === s.id || currentShotSet.has(s.id)}
@@ -813,6 +874,7 @@ export function CosmosMap({
                       );
                     }}
                   />
+                  </g>
                 </g>
               ))}
             </g>
@@ -824,8 +886,8 @@ export function CosmosMap({
                 .map((t) => {
                 const meta = expandedMemberMeta.get(t.id);
                 return (
+                  <g key={t.id} className="lc-gravity-node" style={gravityStyle(t.id)}>
                   <g
-                    key={t.id}
                     className={meta ? 'lc-group-pop' : undefined}
                     style={
                       meta
@@ -858,6 +920,7 @@ export function CosmosMap({
                         );
                       }}
                     />
+                  </g>
                   </g>
                 );
               })}

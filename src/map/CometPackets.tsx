@@ -60,6 +60,7 @@ export function CometPackets({ shot, speed, onShotComplete, expanded, cometScale
   const registry = useEdgeRegistry();
   const layerRef = useRef<SVGGElement>(null);
   const flightsRef = useRef<FlightHandles[]>([]);
+  const stardustRef = useRef<SVGElement[]>([]);
   const tlRef = useRef<gsap.core.Timeline | null>(null);
 
   // We track the current shot via a key so layoutEffect re-runs when it changes.
@@ -72,6 +73,8 @@ export function CometPackets({ shot, speed, onShotComplete, expanded, cometScale
     tlRef.current = null;
     flightsRef.current.forEach((f) => f.group.remove());
     flightsRef.current = [];
+    stardustRef.current.forEach((s) => s.remove());
+    stardustRef.current = [];
 
     if (!renderedShot || !layerRef.current) return;
 
@@ -97,6 +100,7 @@ export function CometPackets({ shot, speed, onShotComplete, expanded, cometScale
         const path = registry.get(leg.key);
         if (!path) continue;
 
+        const color = tint ?? PROTO_COLOR[leg.proto];
         const dur = PROTO_DURATION[leg.proto];
         const fadeIn = dur * 0.15;
         const fadeOutAt = dur * 0.85;
@@ -151,6 +155,12 @@ export function CometPackets({ shot, speed, onShotComplete, expanded, cometScale
           cursor + fadeOutAt,
         );
 
+        // Sparkling wake: as the head passes each point along the leg it
+        // deposits a tiny star that twinkles, drifts, and dissolves — so the
+        // comet's trail lingers as stardust instead of vanishing at the node.
+        const stars = createStardust(layerRef.current, path, color, cometScale, tl, cursor, dur);
+        stardustRef.current.push(...stars);
+
         cursor += dur + 0.02;
       }
     }
@@ -162,6 +172,8 @@ export function CometPackets({ shot, speed, onShotComplete, expanded, cometScale
       tlRef.current = null;
       flightsRef.current.forEach((f) => f.group.remove());
       flightsRef.current = [];
+      stardustRef.current.forEach((s) => s.remove());
+      stardustRef.current = [];
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [renderedShot]);
@@ -204,4 +216,85 @@ function createFlight(parent: SVGGElement, leg: EdgeLeg, scale: number, tint: st
   parent.appendChild(group);
 
   return { group, tail, glow, head };
+}
+
+/** A tiny concave 4-point star, centred at the origin, radius `r`. */
+function sparklePath(r: number): string {
+  const waist = r * 0.3;
+  return `M0,${-r}L${waist},${-waist}L${r},0L${waist},${waist}L0,${r}L${-waist},${waist}L${-r},0L${-waist},${-waist}Z`;
+}
+
+const rand = (min: number, max: number) => min + Math.random() * (max - min);
+
+/**
+ * Deposits a wake of tiny star sparkles along `path`, timed to the moment the
+ * comet head passes each point. Each sparkle pops in, drifts a little, twinkles
+ * (a slow rotation + fade), and dissolves — turning the comet's trail into
+ * stardust rather than letting it vanish at the destination node. Returns the
+ * created elements so the caller can remove them when the shot is torn down.
+ */
+function createStardust(
+  parent: SVGGElement,
+  path: SVGPathElement,
+  color: string,
+  scale: number,
+  tl: gsap.core.Timeline,
+  cursor: number,
+  dur: number,
+): SVGElement[] {
+  const ns = 'http://www.w3.org/2000/svg';
+  const length = path.getTotalLength();
+  if (length < 1) return [];
+
+  // One sparkle roughly every 44 world-units, kept in a sane band so short
+  // hops still shimmer and long ones don't flood the layer.
+  const count = Math.max(5, Math.min(20, Math.round(length / 44)));
+  const created: SVGElement[] = [];
+
+  for (let i = 0; i < count; i += 1) {
+    const fraction = (i + 0.5) / count;
+    const at = path.getPointAtLength(length * fraction);
+    const jitterX = rand(-5, 5) * scale;
+    const jitterY = rand(-5, 5) * scale;
+
+    const star = document.createElementNS(ns, 'path');
+    star.setAttribute('d', sparklePath(rand(2.6, 3.8) * scale));
+    // Most sparkles are white starlight; a few carry the wire colour so the
+    // stardust keeps a hint of the protocol that flew through.
+    star.setAttribute('fill', Math.random() < 0.28 ? color : '#FFFFFF');
+    star.setAttribute('filter', 'url(#cosmos-packet-glow)');
+    star.setAttribute('pointer-events', 'none');
+    parent.appendChild(star);
+    created.push(star);
+
+    gsap.set(star, {
+      x: at.x + jitterX,
+      y: at.y + jitterY,
+      opacity: 0,
+      scale: 0.2,
+      rotation: rand(-30, 30),
+      transformOrigin: 'center',
+    });
+
+    // Head reaches this fraction at cursor + dur*fraction — spawn there.
+    const bornAt = cursor + dur * fraction;
+    const life = rand(0.9, 1.7);
+
+    tl.to(star, { opacity: rand(0.75, 1), scale: 1, duration: 0.18, ease: 'power2.out' }, bornAt);
+    tl.to(
+      star,
+      {
+        opacity: 0,
+        scale: 0.35,
+        x: `+=${rand(-12, 12)}`,
+        y: `+=${rand(-14, 6)}`,
+        rotation: `+=${rand(-50, 50)}`,
+        duration: life,
+        ease: 'power1.out',
+      },
+      bornAt + 0.18,
+    );
+  }
+
+  return created;
 }
