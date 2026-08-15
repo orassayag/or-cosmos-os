@@ -25,7 +25,7 @@ export function TopicNode({ topic: t, selected = false, dimmed = false, showLabe
     t.labelSide === 'above' ? true
     : t.labelSide === 'below' ? false
     : t.y >= 510;
-  const labelY1 = labelAbove ? -18 : 26;
+  const labelY1 = labelAbove ? -20 : 30;
 
   return (
     <g
@@ -89,10 +89,14 @@ export function TopicNode({ topic: t, selected = false, dimmed = false, showLabe
             y={labelY1}
             textAnchor="middle"
             fontFamily="var(--font-mono)"
-            fontSize={8}
-            fontWeight={500}
+            fontSize={13}
+            fontWeight={600}
             fill={t.color}
             fillOpacity={0.95}
+            stroke="var(--bg-app)"
+            strokeWidth={3}
+            strokeLinejoin="round"
+            paintOrder="stroke"
             letterSpacing="0.16em"
           >
             {t.name.toUpperCase()}

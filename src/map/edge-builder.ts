@@ -1,6 +1,7 @@
 import { SERVICES_BY_ID, TOPICS_BY_ID, ALL_STEPS, PLAYABLE_BY_ID, stepsForScenario } from '../scenarios/data';
 import type { Protocol, Step } from '../scenarios/types';
 import type { Shot } from '../scenarios/runner';
+import { planetRadius } from './planetMorphology';
 
 export type PosOverrides = Record<string, { x: number; y: number }>;
 
@@ -24,7 +25,10 @@ export function nodeRef(id: string, ov: PosOverrides = {}): NodeRef | null {
   const svc = SERVICES_BY_ID[id];
   if (svc) {
     const pos = ov[id] ?? svc;
-    return { x: pos.x, y: pos.y, hw: svc.width / 2, hh: svc.height / 2, isCapsule: true };
+    // Services render as spheres; edges anchor to that circle (hw === hh),
+    // not the old capsule bounds.
+    const radius = planetRadius(id);
+    return { x: pos.x, y: pos.y, hw: radius, hh: radius, isCapsule: true };
   }
   const topic = TOPICS_BY_ID[id];
   if (topic) {
