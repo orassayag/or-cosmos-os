@@ -196,13 +196,14 @@ export function App() {
   }, []);
 
   // The "Cosmos" title resets the galaxy to its initial state: no scenario,
-  // home domain, cleared history/URL params, every overlay closed, map reframed.
+  // no domain tab selected, cleared history/URL params, every overlay closed,
+  // map reframed.
   const handleResetGalaxy = useCallback(() => {
     setScenario(null);
     setHistory([]);
     setShot(null);
     setPanelOpen(true);
-    setActiveDomain(DOMAINS[0].id);
+    setActiveDomain('');
     setSpotlightTarget(null);
     setWarp(null);
     setCosmosState(null);
