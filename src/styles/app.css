@@ -1657,31 +1657,40 @@ body:has(.lc-map-stage[data-panning='true']) * {
   border-color: color-mix(in srgb, #ff5a52 45%, var(--border));
 }
 
-.lc-incident-banner {
+/* ── Incident panel — per-step narration, styled like the player box ──── */
+.lc-incident-panel {
   position: absolute;
   top: 16px;
-  left: 50%;
+  /* Centre over the map area, clear of the ~374px step panel on the right. */
+  left: calc(50% - 187px);
   transform: translateX(-50%);
   z-index: 30;
   display: flex;
-  align-items: center;
-  gap: 14px;
-  max-width: min(760px, calc(100% - 48px));
-  padding: 10px 16px;
-  border: 1px solid color-mix(in srgb, #ff5a52 45%, var(--border));
-  border-radius: var(--radius-pill);
+  flex-direction: column;
+  gap: 9px;
+  width: min(560px, calc(100% - 420px));
+  padding: 14px 18px 12px;
+  border: 1px solid color-mix(in srgb, #ff5a52 40%, var(--border));
+  border-radius: var(--radius-md);
   background:
     linear-gradient(180deg,
-      color-mix(in srgb, #ff5a52 14%, var(--bg-elevated)) 0%,
-      color-mix(in srgb, #ff5a52 6%, var(--bg-elevated)) 100%);
+      color-mix(in srgb, #ff5a52 16%, var(--surface-1)) 0%,
+      color-mix(in srgb, #ff5a52 8%, var(--surface-1)) 100%);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
   box-shadow:
     inset 0 1px 0 0 color-mix(in srgb, white 6%, transparent),
-    0 12px 40px -14px rgba(0, 0, 0, 0.8),
-    0 0 30px -6px color-mix(in srgb, #ff5a52 55%, transparent);
+    0 16px 40px -16px rgba(0, 0, 0, 0.8),
+    0 0 28px -8px color-mix(in srgb, #ff5a52 34%, transparent);
   color: var(--text-1);
   pointer-events: auto;
 }
-.lc-incident-banner-badge {
+.lc-incident-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.lc-incident-panel-badge {
   flex: none;
   font-family: var(--font-mono);
   font-size: 9px;
@@ -1692,31 +1701,55 @@ body:has(.lc-map-stage[data-panning='true']) * {
   background: #ff5a52;
   color: #180404;
 }
-.lc-incident-banner-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.lc-incident-panel-title {
+  margin: 0;
   min-width: 0;
-}
-.lc-incident-banner-lead {
+  flex: 1 1 auto;
   font-family: var(--font-display);
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-incident-panel-counter {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: color-mix(in srgb, #ff8a84 75%, var(--text-2));
+}
+.lc-incident-panel-body {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 13px;
+  line-height: 1.45;
   color: var(--text-1);
 }
-.lc-incident-banner-note {
-  font-family: var(--font-display);
-  font-size: 11.5px;
-  line-height: 1.35;
+.lc-incident-panel-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 8px;
+  margin-top: 1px;
+  border-top: 1px solid color-mix(in srgb, #ff5a52 18%, var(--border));
+}
+.lc-incident-panel-meta {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
   color: var(--text-2);
 }
-.lc-incident-banner-refs {
-  flex: none;
+.lc-incident-panel-refs {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   align-items: center;
+  margin-left: auto;
 }
-.lc-incident-banner-ref {
+.lc-incident-panel-ref {
   font-family: var(--font-mono);
   font-size: 9.5px;
   letter-spacing: 0.04em;
@@ -1725,7 +1758,7 @@ body:has(.lc-map-stage[data-panning='true']) * {
   white-space: nowrap;
   border-bottom: 1px dotted color-mix(in srgb, #ff8a84 50%, transparent);
 }
-.lc-incident-banner-ref:hover { color: #ffb0ab; }
+.lc-incident-panel-ref:hover { color: #ffb0ab; }
 
 /* ── Stage = map + floating overlays (step panel, activity log, strip) ─ */
 .lc-stage {

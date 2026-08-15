@@ -6,6 +6,8 @@ interface IncidentBarProps {
   /** Currently selected playable id — highlights the active incident. */
   activeScenarioId: string | null;
   onPickIncident: (incidentId: string) => void;
+  /** Bumped by a galaxy reset ("Cosmos" title / global Esc) to close the menu. */
+  resetNonce?: number;
 }
 
 /**
@@ -14,9 +16,15 @@ interface IncidentBarProps {
  * the same path a scenario takes. Styled to match the DomainBar menu so an
  * incident feels like a sibling of a scenario, not a separate tool.
  */
-export function IncidentBar({ activeScenarioId, onPickIncident }: IncidentBarProps) {
+export function IncidentBar({ activeScenarioId, onPickIncident, resetNonce = 0 }: IncidentBarProps) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+
+  // A galaxy reset collapses the incidents dropdown so the trigger stays neutral.
+  useEffect(() => {
+    if (resetNonce === 0) return;
+    setOpen(false);
+  }, [resetNonce]);
 
   useEffect(() => {
     if (!open) return;

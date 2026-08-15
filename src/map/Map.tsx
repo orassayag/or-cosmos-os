@@ -20,6 +20,7 @@ import type { EdgeRecord, PosOverrides } from './edge-builder';
 import { Edge } from './Edge';
 import { edgeKey } from './edge-resolver';
 import { ServiceNode } from './ServiceNode';
+import { StarExplosion } from './StarExplosion';
 import { TopicNode } from './TopicNode';
 import { CONNECTED_NODE_IDS, TOPIC_GROUPS, radialMemberPosition } from './topic-groups';
 import type { TopicGroup } from './topic-groups';
@@ -123,6 +124,14 @@ interface MapProps {
   /** True when the active playable is a recorded incident — tints the comet
    *  the incident colour so a historical replay never reads as live traffic. */
   incidentActive?: boolean;
+  /** Service id of the star that HAS detonated — its capsule is removed and
+   *  replaced with a scattered-debris burst. Set only once its meteor lands. */
+  explodeNodeId?: string | null;
+  /** Service id the incident's last meteor is flying toward — the comet layer
+   *  calls {@link onStarHit} with it the instant the packet arrives. */
+  explodeTargetId?: string | null;
+  /** Fired by the comet layer when a meteor reaches {@link explodeTargetId}. */
+  onStarHit?: (nodeId: string) => void;
   /** Active domain id. A change fires a brief warp-jump flourish on the map —
    *  the stars stretch and snap, as if jumping to a different star system. */
   activeDomain?: string | null;
@@ -147,6 +156,9 @@ export function CosmosMap({
   resetNonce = 0,
   askFocusId = null,
   incidentActive = false,
+  explodeNodeId = null,
+  explodeTargetId = null,
+  onStarHit,
   activeDomain = null,
   driftCursorDate = null,
   onDriftSelect,
@@ -897,6 +909,7 @@ export function CosmosMap({
             {/* Services */}
             <g>
               {displayServices.map((s) => (
+                s.id === explodeNodeId ? null : (
                 <g
                   key={s.id}
                   className="lc-gravity-node"
@@ -947,8 +960,16 @@ export function CosmosMap({
                   />
                   </g>
                 </g>
+                )
               ))}
             </g>
+
+            {/* Star detonation — the incident's last star blows apart into
+                debris; the capsule itself is already omitted above. */}
+            {explodeNodeId && (() => {
+              const dead = displayServices.find((s) => s.id === explodeNodeId);
+              return dead ? <StarExplosion x={dead.x} y={dead.y} color={dead.color} /> : null;
+            })()}
 
             {/* Topics */}
             <g>
@@ -1005,6 +1026,8 @@ export function CosmosMap({
               expanded={expandedSet}
               cometScale={presentation ? 1.7 : 1}
               tint={incidentActive ? INCIDENT_COMET_HEX : null}
+              explodeTargetId={explodeTargetId}
+              onStarHit={onStarHit}
             />
 
             {/* Idle ambient traffic — only when no scenario is active.

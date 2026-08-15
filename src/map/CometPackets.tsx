@@ -29,6 +29,10 @@ interface CometPacketsProps {
   /** Overrides the per-protocol comet colour when set (e.g. incident replays
    *  fly a warning-red comet instead of the wire colour). */
   tint?: string | null;
+  /** When a leg lands on this node, {@link onStarHit} fires at the exact moment
+   *  of impact — used to detonate an incident's final star on the meteor hit. */
+  explodeTargetId?: string | null;
+  onStarHit?: (nodeId: string) => void;
 }
 
 interface FlightHandles {
@@ -56,8 +60,14 @@ const PROTO_DURATION: Record<Protocol, number> = {
  * front of nodes. Receives one shot at a time and animates it on
  * the rendered edge paths via GSAP MotionPathPlugin.
  */
-export function CometPackets({ shot, speed, onShotComplete, expanded, cometScale = 1, tint = null }: CometPacketsProps) {
+export function CometPackets({ shot, speed, onShotComplete, expanded, cometScale = 1, tint = null, explodeTargetId = null, onStarHit }: CometPacketsProps) {
   const registry = useEdgeRegistry();
+  // Read the latest hit target/handler inside the shot-scoped timeline without
+  // rebuilding it — the timeline effect only re-runs per shot.
+  const explodeTargetRef = useRef(explodeTargetId);
+  explodeTargetRef.current = explodeTargetId;
+  const onStarHitRef = useRef(onStarHit);
+  onStarHitRef.current = onStarHit;
   const layerRef = useRef<SVGGElement>(null);
   const flightsRef = useRef<FlightHandles[]>([]);
   const stardustRef = useRef<SVGElement[]>([]);
@@ -169,6 +179,13 @@ export function CometPackets({ shot, speed, onShotComplete, expanded, cometScale
         // lands on the node instead of watching the packet quietly vanish.
         const splash = createSplash(layerRef.current, path, color, cometScale, tl, cursor + dur);
         splashRef.current.push(...splash);
+
+        // The instant this meteor reaches the star flagged for detonation,
+        // blow it up — timed to impact, not to the timeline's late onComplete.
+        if (leg.to && leg.to === explodeTargetRef.current) {
+          const hitNode = leg.to;
+          tl.call(() => onStarHitRef.current?.(hitNode), undefined, cursor + dur);
+        }
 
         cursor += dur + 0.02;
       }

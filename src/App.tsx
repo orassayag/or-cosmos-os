@@ -21,7 +21,7 @@ import type { SpotlightTarget } from './components/Spotlight';
 import { BrandStarfield } from './map/BrandStarfield';
 import { OverlayProvider, useOverlay, useOverlayManager, OVERLAY } from './overlays/OverlayManager';
 
-import { DOMAINS, SCENARIOS_BY_ID, INCIDENTS_BY_ID, SERVICES, driftRunDateTime } from './scenarios/data';
+import { DOMAINS, SCENARIOS_BY_ID, INCIDENTS_BY_ID, SERVICES, SERVICES_BY_ID, TOPICS_BY_ID, driftRunDateTime } from './scenarios/data';
 import type { Incident, DriftEntry } from './scenarios/data';
 import type { Step } from './scenarios/types';
 import { useScenarioRunner } from './scenarios/runner';
@@ -179,11 +179,20 @@ export function App() {
     setWarp(null);
   }, [warp]);
 
-  // A Changes side-panel entry was clicked: stamp its commit + run date as the
-  // "current time" — the same cursor a changelog pick sets, so the two agree.
+  // A Changes side-panel entry was clicked: warp to its affected node exactly
+  // like a changelog item, so both surfaces share the same hyperspace landing.
+  // When the entry touches no live node, fall back to just stamping the cursor.
   const handleSelectDrift = useCallback((entry: DriftEntry) => {
-    setCosmosState(cosmosStateFor(entry));
-    setDriftDate(entry.date);
+    const nodeId = entry.nodeIds[0];
+    const target: SpotlightTarget | null = nodeId
+      ? { id: nodeId, kind: TOPICS_BY_ID[nodeId] ? 'topic' : 'service' }
+      : null;
+    if (target) {
+      setWarp({ target, state: cosmosStateFor(entry), date: entry.date });
+    } else {
+      setCosmosState(cosmosStateFor(entry));
+      setDriftDate(entry.date);
+    }
   }, []);
 
   // The "Cosmos" title resets the galaxy to its initial state: no scenario,
@@ -358,6 +367,30 @@ function CosmosShell(p: CosmosShellProps) {
   }, [overlay]);
   const handleAnswerStart = useCallback(() => setAskAnswering(true), []);
 
+  // The current step, exposed to the incident panel so its body tracks playback.
+  const currentStep =
+    state.idx >= 0 && state.idx < steps.length ? steps[state.idx] : null;
+
+  // The star the incident's LAST hop targets — the one that will blow up, but
+  // ONLY once its meteor actually lands. Null unless we're on the last step and
+  // it lands on a service (topics are light nodes, not stars). This is just the
+  // "watch" target handed to the comet layer, not the detonation itself.
+  const explodeTargetId = useMemo(() => {
+    if (!activeIncident || steps.length === 0) return null;
+    if (state.idx !== steps.length - 1) return null;
+    const last = steps[steps.length - 1];
+    if (SERVICES_BY_ID[last.to]) return last.to;
+    if (SERVICES_BY_ID[last.from]) return last.from;
+    return null;
+  }, [activeIncident, state.idx, steps]);
+
+  // The star that HAS detonated — set only when the meteor reaches it. Cleared
+  // whenever the target changes (new incident, moved off the last step) so a
+  // fresh star stays intact until its own meteor strikes.
+  const [explodedStarId, setExplodedStarId] = useState<string | null>(null);
+  useEffect(() => { setExplodedStarId(null); }, [explodeTargetId]);
+  const handleStarHit = useCallback((nodeId: string) => setExplodedStarId(nodeId), []);
+
   // Keyboard: P toggles presentation; arrows / space drive playback so the
   // deck is navigable once the on-screen controls are hidden.
   useEffect(() => {
@@ -453,10 +486,12 @@ function CosmosShell(p: CosmosShellProps) {
               activeScenarioId={state.scenarioId}
               onPickDomain={handlePickDomain}
               onPickScenario={handlePickScenario}
+              resetNonce={resetNonce}
             />
             <IncidentBar
               activeScenarioId={state.scenarioId}
               onPickIncident={handlePickScenario}
+              resetNonce={resetNonce}
             />
           </div>
 
@@ -502,12 +537,20 @@ function CosmosShell(p: CosmosShellProps) {
           resetNonce={resetNonce}
           askFocusId={askAnswering ? askFocusId : null}
           incidentActive={!!activeIncident}
+          explodeNodeId={explodedStarId}
+          explodeTargetId={explodeTargetId}
+          onStarHit={handleStarHit}
           activeDomain={activeDomain}
           driftCursorDate={driftDate}
           onDriftSelect={onSelectDrift}
         />
 
-        <IncidentBanner incident={activeIncident} />
+        <IncidentBanner
+          incident={activeIncident}
+          step={activeIncident ? currentStep : null}
+          stepIndex={state.idx}
+          stepCount={steps.length}
+        />
 
         <StepPanel
           scenario={scenario}
