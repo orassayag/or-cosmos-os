@@ -61,6 +61,7 @@ export function CometPackets({ shot, speed, onShotComplete, expanded, cometScale
   const layerRef = useRef<SVGGElement>(null);
   const flightsRef = useRef<FlightHandles[]>([]);
   const stardustRef = useRef<SVGElement[]>([]);
+  const splashRef = useRef<SVGElement[]>([]);
   const tlRef = useRef<gsap.core.Timeline | null>(null);
 
   // We track the current shot via a key so layoutEffect re-runs when it changes.
@@ -75,6 +76,8 @@ export function CometPackets({ shot, speed, onShotComplete, expanded, cometScale
     flightsRef.current = [];
     stardustRef.current.forEach((s) => s.remove());
     stardustRef.current = [];
+    splashRef.current.forEach((s) => s.remove());
+    splashRef.current = [];
 
     if (!renderedShot || !layerRef.current) return;
 
@@ -161,6 +164,12 @@ export function CometPackets({ shot, speed, onShotComplete, expanded, cometScale
         const stars = createStardust(layerRef.current, path, color, cometScale, tl, cursor, dur);
         stardustRef.current.push(...stars);
 
+        // Splash on arrival: the instant the head reaches the destination star
+        // (t = cursor + dur), burst a ripple + radial spray of light so the eye
+        // lands on the node instead of watching the packet quietly vanish.
+        const splash = createSplash(layerRef.current, path, color, cometScale, tl, cursor + dur);
+        splashRef.current.push(...splash);
+
         cursor += dur + 0.02;
       }
     }
@@ -174,6 +183,8 @@ export function CometPackets({ shot, speed, onShotComplete, expanded, cometScale
       flightsRef.current = [];
       stardustRef.current.forEach((s) => s.remove());
       stardustRef.current = [];
+      splashRef.current.forEach((s) => s.remove());
+      splashRef.current = [];
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [renderedShot]);
@@ -293,6 +304,78 @@ function createStardust(
         ease: 'power1.out',
       },
       bornAt + 0.18,
+    );
+  }
+
+  return created;
+}
+
+/**
+ * Bursts a splash of light at the far end of `path` — the destination star —
+ * timed to `at` (the moment the comet head arrives). An expanding ripple ring
+ * plus a short radial spray of droplets read like a water droplet hitting a
+ * pond, so the eye follows the request all the way in instead of losing it as
+ * the packet fades. Returns the created elements for teardown.
+ */
+function createSplash(
+  parent: SVGGElement,
+  path: SVGPathElement,
+  color: string,
+  scale: number,
+  tl: gsap.core.Timeline,
+  at: number,
+): SVGElement[] {
+  const ns = 'http://www.w3.org/2000/svg';
+  const length = path.getTotalLength();
+  if (length < 1) return [];
+
+  const landing = path.getPointAtLength(length);
+  const created: SVGElement[] = [];
+
+  // The ripple: a stroked ring that expands outward and fades — the surface of
+  // the pond opening up where the droplet struck.
+  const ring = document.createElementNS(ns, 'circle');
+  ring.setAttribute('r', String(4 * scale));
+  ring.setAttribute('fill', 'none');
+  ring.setAttribute('stroke', '#FFFFFF');
+  ring.setAttribute('stroke-width', String(1.6 * scale));
+  ring.setAttribute('filter', 'url(#cosmos-packet-glow)');
+  ring.setAttribute('pointer-events', 'none');
+  parent.appendChild(ring);
+  created.push(ring);
+
+  gsap.set(ring, { x: landing.x, y: landing.y, scale: 0.2, opacity: 0, transformOrigin: 'center' });
+  tl.to(ring, { opacity: 0.9, duration: 0.08, ease: 'power2.out' }, at);
+  tl.to(ring, { scale: 3.4 * scale, opacity: 0, duration: 0.55, ease: 'power2.out' }, at + 0.02);
+
+  // The spray: a handful of droplets flung radially outward, each popping in and
+  // falling back to nothing.
+  const dropletCount = 7;
+  for (let i = 0; i < dropletCount; i += 1) {
+    const angle = (i / dropletCount) * Math.PI * 2 + rand(-0.35, 0.35);
+    const distance = rand(14, 26) * scale;
+
+    const droplet = document.createElementNS(ns, 'circle');
+    droplet.setAttribute('r', String(rand(1.4, 2.6) * scale));
+    droplet.setAttribute('fill', Math.random() < 0.4 ? color : '#FFFFFF');
+    droplet.setAttribute('filter', 'url(#cosmos-packet-glow)');
+    droplet.setAttribute('pointer-events', 'none');
+    parent.appendChild(droplet);
+    created.push(droplet);
+
+    gsap.set(droplet, { x: landing.x, y: landing.y, scale: 0.4, opacity: 0, transformOrigin: 'center' });
+    tl.to(droplet, { opacity: rand(0.8, 1), scale: 1, duration: 0.09, ease: 'power2.out' }, at);
+    tl.to(
+      droplet,
+      {
+        x: landing.x + Math.cos(angle) * distance,
+        y: landing.y + Math.sin(angle) * distance,
+        scale: 0.3,
+        opacity: 0,
+        duration: rand(0.4, 0.6),
+        ease: 'power2.out',
+      },
+      at + 0.04,
     );
   }
 
