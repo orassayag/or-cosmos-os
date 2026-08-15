@@ -3098,6 +3098,24 @@ body:has(.lc-map-stage[data-panning='true']) * {
   transition: transform 720ms cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
+/* Soft nebula — each zone's cloud drifts on a slow, offset loop so the sky
+   breathes. Intensity (brighten + hue shift) is driven by inline styles; this
+   only supplies the ambient wander. --nebula-phase desyncs the four blobs. */
+.lc-nebula-blob {
+  animation: lc-nebula-drift 34s ease-in-out infinite;
+  animation-delay: var(--nebula-phase, 0s);
+  will-change: transform;
+}
+@keyframes lc-nebula-drift {
+  0%   { transform: translate(0, 0); }
+  33%  { transform: translate(26px, -18px); }
+  66%  { transform: translate(-20px, 14px); }
+  100% { transform: translate(0, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-nebula-blob { animation: none; }
+}
+
 /* Topic group fan-out — expanded members pop from the hub onto their ring
    position, staggered like a radial speed-dial menu opening. */
 .lc-group-pop {

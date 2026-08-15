@@ -38,6 +38,7 @@ import { HealthCard } from './HealthCard';
 import { HEALTH_BY_SERVICE, HEALTH_STATUS_META } from '../scenarios/health';
 import { CometPackets } from './CometPackets';
 import { AmbientPackets } from './AmbientPackets';
+import { NebulaField } from './NebulaField';
 import { MapStepper } from './MapStepper';
 import { UICluster } from './UICluster';
 import { ShoppingCluster } from './ShoppingCluster';
@@ -120,6 +121,9 @@ interface MapProps {
   /** True when the active playable is a recorded incident — tints the comet
    *  the incident colour so a historical replay never reads as live traffic. */
   incidentActive?: boolean;
+  /** Active domain id. A change fires a brief warp-jump flourish on the map —
+   *  the stars stretch and snap, as if jumping to a different star system. */
+  activeDomain?: string | null;
 }
 
 
@@ -136,6 +140,7 @@ export function CosmosMap({
   resetNonce = 0,
   askFocusId = null,
   incidentActive = false,
+  activeDomain = null,
 }: MapProps) {
   const overlay = useOverlay();
   const [selection, setSelection] = useState<Selection>(null);
@@ -232,10 +237,44 @@ export function CosmosMap({
   overridesRef.current = overrides;
   const dragRef = useRef<{ id: string; offX: number; offY: number } | null>(null);
   const svgElRef = useRef<SVGSVGElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const expandedSet = useMemo(
     () => (expandedServiceId ? new Set([expandedServiceId]) : null),
     [expandedServiceId],
   );
+
+  // Warp jump — switching domains fires a brief hyperspace flourish across the
+  // whole map: a quick zoom-and-blur stretches the stars outward, then a fast
+  // snap settles them, so moving between domains feels like jumping to a new
+  // star system. Purely decorative; respects reduced-motion and leaves no
+  // residual style (default fill mode reverts to the element's own transform).
+  const prevDomainRef = useRef(activeDomain);
+  useEffect(() => {
+    const previousDomain = prevDomainRef.current;
+    prevDomainRef.current = activeDomain;
+    if (previousDomain === activeDomain || activeDomain == null) return;
+
+    const stage = stageRef.current;
+    if (!stage || typeof stage.animate !== 'function') return;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+
+    const warp = stage.animate(
+      [
+        { transform: 'scale(1)', filter: 'blur(0px) brightness(1)' },
+        { transform: 'scale(1.06)', filter: 'blur(3px) brightness(1.22)', offset: 0.32 },
+        {
+          transform: 'scale(1.09)',
+          filter: 'blur(4.5px) brightness(1.4)',
+          offset: 0.5,
+          easing: 'cubic-bezier(0.7, 0, 0.84, 0)',
+        },
+        { transform: 'scale(0.992)', filter: 'blur(0.6px) brightness(1.05)', offset: 0.82 },
+        { transform: 'scale(1)', filter: 'blur(0px) brightness(1)' },
+      ],
+      { duration: 560, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' },
+    );
+    return () => warp.cancel();
+  }, [activeDomain]);
 
   // For realtime-hub's expanded ecosystem: which destinations does the
   // active scenario actually broadcast to via the hub? (Currently only
@@ -714,6 +753,7 @@ export function CosmosMap({
   return (
     <EdgeRegistryContext.Provider value={registry}>
       <div
+        ref={stageRef}
         className="lc-map-stage lc-map-stage--cosmos"
         data-panning={panning ? 'true' : 'false'}
         data-revealing={revealing ? 'true' : 'false'}
@@ -751,6 +791,16 @@ export function CosmosMap({
             className="lc-world"
             transform={`translate(${view.tx} ${view.ty}) scale(${view.scale})`}
           >
+            {/* Soft nebula — the furthest-back layer. Brightens per zone as
+                flows play or a viewer's attention settles there. */}
+            <NebulaField
+              scenarioNodes={scenarioNodeSet}
+              shotNodes={currentShotSet}
+              hoverId={gravitySourceId}
+              selectionId={selection && selection.kind !== 'sub-service' ? selection.id : null}
+              density={trafficDensity}
+            />
+
             {/* Cluster backdrops — sit behind everything. */}
             <UICluster activeNodes={scenarioActiveSet} />
             <ShoppingCluster activeNodes={scenarioActiveSet} />

@@ -465,6 +465,7 @@ function CosmosShell(p: CosmosShellProps) {
           resetNonce={resetNonce}
           askFocusId={askAnswering ? askFocusId : null}
           incidentActive={!!activeIncident}
+          activeDomain={activeDomain}
         />
 
         <IncidentBanner incident={activeIncident} />
